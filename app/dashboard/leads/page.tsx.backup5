@@ -1,0 +1,311 @@
+"use client"
+
+import { Suspense, useState } from "react"
+import { toast } from "sonner"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Search, Filter, Download, Upload, Plus, Trash2, CheckCircle } from "lucide-react"
+import { CreateLeadDialog } from "@/components/leads/create-lead-dialog"
+import { AdvancedFilters, FilterState } from "@/components/leads/advanced-filters"
+import { useLeads, type Lead } from "@/hooks/use-leads"
+import { LeadsTableSkeleton } from "@/components/skeletons/leads-table-skeleton"
+import { LeadDetailModal } from "@/components/leads/lead-detail-modal"
+
+function LeadsTable() {
+  const { leads, loading, error } = useLeads()
+  const [searchQuery, setSearchQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
+  const [regionFilter, setRegionFilter] = useState("all")
+  const [selectedLeads, setSelectedLeads] = useState<string[]>([])
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [advancedFilters, setAdvancedFilters] = useState<FilterState | null>(null)
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [detailModalOpen, setDetailModalOpen] = useState(false)
+
+  if (loading) {
+    return <LeadsTableSkeleton />
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center py-8">
+          <div className="text-center">
+            <p className="text-destructive">{error}</p>
+            <Button onClick={() => window.location.reload()} className="mt-2">
+              Try Again
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const handleExport = () => {
+    toast.success("Leads exported successfully!", {
+      description: `${leads.length} leads exported to CSV`
+    })
+  }
+
+  const handleImport = () => {
+    toast.promise(
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+      {
+        loading: 'Importing leads...',
+        success: '120 leads imported successfully!',
+        error: 'Failed to import leads',
+      }
+    )
+  }
+
+  const handleBulkDelete = () => {
+    if (selectedLeads.length === 0) {
+      toast.error("No leads selected")
+      return
+    }
+    toast.success(`${selectedLeads.length} leads deleted`, {
+      action: {
+        label: 'Undo',
+        onClick: () => toast.info('Deletion cancelled')
+      }
+    })
+    setSelectedLeads([])
+  }
+
+  const handleOpenDetailModal = (lead: Lead) => {
+    setSelectedLead(lead)
+    setDetailModalOpen(true)
+  }
+
+  const getScoreBadge = (score: number) => {
+    if (score >= 90) return <Badge className="bg-green-600">Excellent</Badge>
+    if (score >= 75) return <Badge className="bg-blue-600">Good</Badge>
+    if (score >= 50) return <Badge className="bg-yellow-600">Fair</Badge>
+    return <Badge variant="destructive">Poor</Badge>
+  }
+
+  const getEmailStatusBadge = (status: string) => {
+    if (status === "valid") return <Badge variant="outline" className="border-green-600 text-green-600">Valid</Badge>
+    if (status === "invalid") return <Badge variant="outline" className="border-red-600 text-red-600">Invalid</Badge>
+    return <Badge variant="outline">Unknown</Badge>
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Lead Database</CardTitle>
+        <CardDescription>
+          {leads.length} total leads • {leads.filter(l => l.is_outreach_ready).length} outreach ready
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {selectedLeads.length > 0 && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border bg-muted p-3">
+            <span className="text-sm font-medium">
+              {selectedLeads.length} lead{selectedLeads.length > 1 ? 's' : ''} selected
+            </span>
+            <div className="ml-auto flex gap-2">
+              <Button size="sm" variant="outline" onClick={handleMarkAsReady}>
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Mark as Ready
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleBulkDelete}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelectedLeads([])}>
+                Clear
+              </Button>
+            </div>
+          </div>
+        )}
+        <div className="mb-4 flex gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search leads..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Email Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="valid">Valid</SelectItem>
+              <SelectItem value="invalid">Invalid</SelectItem>
+              <SelectItem value="unknown">Unknown</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={regionFilter} onValueChange={setRegionFilter}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Region" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Regions</SelectItem>
+              <SelectItem value="usa">USA</SelectItem>
+              <SelectItem value="germany">Germany</SelectItem>
+              <SelectItem value="nigeria">Nigeria</SelectItem>
+              <SelectItem value="uk">UK</SelectItem>
+            </SelectContent>
+          </Select>
+          <AdvancedFilters onFiltersChange={setAdvancedFilters} />
+        </div>
+
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-12">
+                  <Checkbox
+                    checked={selectedLeads.length === leads.length}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        setSelectedLeads(leads.map(l => l.id))
+                      } else {
+                        setSelectedLeads([])
+                      }
+                    }}
+                  />
+                </TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Job Title</TableHead>
+                <TableHead>Company</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Score</TableHead>
+                <TableHead>Region</TableHead>
+                <TableHead>Ready</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {leads.map((lead) => (
+                <TableRow
+                  key={lead.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => handleOpenDetailModal(lead)}
+                >
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedLeads.includes(lead.id)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedLeads([...selectedLeads, lead.id])
+                        } else {
+                          setSelectedLeads(selectedLeads.filter(id => id !== lead.id))
+                        }
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell className="font-medium">{lead.full_name}</TableCell>
+                  <TableCell>{lead.job_title}</TableCell>
+                  <TableCell>{lead.company}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{lead.email}</TableCell>
+                  <TableCell>{getEmailStatusBadge(lead.email_status)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{lead.score}</span>
+                      {getScoreBadge(lead.score)}
+                    </div>
+                  </TableCell>
+                  <TableCell>{lead.region}</TableCell>
+                  <TableCell>
+                    {lead.is_outreach_ready ? (
+                      <Badge variant="outline" className="border-green-600 text-green-600">Ready</Badge>
+                    ) : (
+                      <Badge variant="outline">Not Ready</Badge>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+
+    <LeadDetailModal
+      lead={selectedLead}
+      open={detailModalOpen}
+      onOpenChange={setDetailModalOpen}
+    />
+  )
+}
+
+export default function LeadsPage() {
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+
+  const handleExport = () => {
+    toast.success("Leads exported successfully!", {
+      description: "All leads exported to CSV"
+    })
+  }
+
+  const handleImport = () => {
+    toast.promise(
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+      {
+        loading: 'Importing leads...',
+        success: '120 leads imported successfully!',
+        error: 'Failed to import leads',
+      }
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Leads</h1>
+          <p className="text-muted-foreground">
+            Manage and qualify your lead database
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExport}>
+            <Download className="mr-2 h-4 w-4" />
+            Export
+          </Button>
+          <Button variant="outline" onClick={handleImport}>
+            <Upload className="mr-2 h-4 w-4" />
+            Import
+          </Button>
+          <Button onClick={() => setCreateDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Lead
+          </Button>
+        </div>
+      </div>
+
+      <CreateLeadDialog 
+        open={createDialogOpen} 
+        onOpenChange={setCreateDialogOpen}
+      />
+
+      <Suspense fallback={<LeadsTableSkeleton />}>
+        <LeadsTable />
+      </Suspense>
+    </div>
+  )
+}

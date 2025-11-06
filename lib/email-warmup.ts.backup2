@@ -1,0 +1,191 @@
+interface WarmupConfig {
+  domain: string
+  startDate: Date
+  currentDay: number
+  dailyLimit: number
+  sentToday: number
+  reputation: number // 0-100
+}
+
+interface WarmupSchedule {
+  day: number
+  maxEmails: number
+  interval: number // minutes between emails
+}
+
+export class EmailWarmupService {
+  private config: WarmupConfig
+  private schedule: WarmupSchedule[] = [
+    { day: 1, maxEmails: 10, interval: 60 },
+    { day: 2, maxEmails: 15, interval: 45 },
+    { day: 3, maxEmails: 20, interval: 30 },
+    { day: 4, maxEmails: 30, interval: 20 },
+    { day: 5, maxEmails: 50, interval: 15 },
+    { day: 6, maxEmails: 75, interval: 10 },
+    { day: 7, maxEmails: 100, interval: 8 },
+    { day: 8, maxEmails: 125, interval: 6 },
+    { day: 9, maxEmails: 150, interval: 5 },
+    { day: 10, maxEmails: 200, interval: 4 },
+    { day: 11, maxEmails: 250, interval: 3 },
+    { day: 12, maxEmails: 300, interval: 2 },
+    { day: 13, maxEmails: 400, interval: 2 },
+    { day: 14, maxEmails: 500, interval: 1 },
+    { day: 15, maxEmails: 600, interval: 1 },
+    // Continue with gradual increases...
+    { day: 30, maxEmails: 2000, interval: 0.5 },
+  ]
+
+  constructor(domain: string) {
+    this.config = {
+      domain,
+      startDate: new Date(),
+      currentDay: 1,
+      dailyLimit: 10,
+      sentToday: 0,
+      reputation: 10
+    }
+  }
+
+  // Load warmup config from storage/database
+  loadConfig(config: WarmupConfig) {
+    this.config = config
+    this.updateDailyLimit()
+  }
+
+  // Get current warmup status
+  getStatus() {
+    return {
+      ...this.config,
+      progress: Math.min((this.config.currentDay / 30) * 100, 100),
+      canSendToday: this.config.sentToday < this.config.dailyLimit,
+      remainingToday: Math.max(0, this.config.dailyLimit - this.config.sentToday)
+    }
+  }
+
+  // Check if we can send an email now
+  canSendEmail(): boolean {
+    return this.config.sentToday < this.config.dailyLimit
+  }
+
+  // Record a sent email
+  recordSentEmail(): void {
+    this.config.sentToday++
+  }
+
+  // Advance to next day (should be called daily)
+  advanceDay(): void {
+    this.config.currentDay++
+    this.config.sentToday = 0
+    this.updateDailyLimit()
+    this.updateReputation()
+  }
+
+  // Update daily sending limit based on current day
+  private updateDailyLimit(): void {
+    const schedule = this.schedule.find(s => s.day === this.config.currentDay)
+    if (schedule) {
+      this.config.dailyLimit = schedule.maxEmails
+    } else if (this.config.currentDay > 30) {
+      // After 30 days, gradually increase based on reputation
+      this.config.dailyLimit = Math.floor(2000 * (this.config.reputation / 100))
+    }
+  }
+
+  // Update reputation based on deliverability metrics
+  updateReputation(deliverabilityRate: number = 0.95): void {
+    // Simple reputation calculation
+    if (deliverabilityRate > 0.9) {
+      this.config.reputation = Math.min(100, this.config.reputation + 2)
+    } else if (deliverabilityRate < 0.7) {
+      this.config.reputation = Math.max(0, this.config.reputation - 5)
+    }
+  }
+
+  // Get recommended sending schedule for today
+  getTodaysSchedule(): {
+    maxEmails: number
+    interval: number
+    recommendedTimes: string[]
+  } {
+    const schedule = this.schedule.find(s => s.day === this.config.currentDay) ||
+                    { maxEmails: this.config.dailyLimit, interval: 1 }
+
+    // Generate recommended sending times
+    const times: string[] = []
+    const startHour = 9 // 9 AM
+    const endHour = 17 // 5 PM
+    const emailsPerHour = Math.max(1, Math.floor(schedule.maxEmails / (endHour - startHour)))
+
+    for (let hour = startHour; hour < endHour; hour++) {
+      for (let i = 0; i < emailsPerHour && times.length < schedule.maxEmails; i++) {
+        const minute = i * (60 / emailsPerHour)
+        times.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`)
+      }
+    }
+
+    return {
+      maxEmails: schedule.maxEmails,
+      interval: schedule.interval,
+      recommendedTimes: times
+    }
+  }
+
+  // Get warmup recommendations
+  getRecommendations(): string[] {
+    const recommendations: string[] = []
+
+    if (this.config.currentDay <= 7) {
+      recommendations.push("Focus on building sender reputation - avoid sending to inactive leads")
+    }
+
+    if (this.config.reputation < 50) {
+      recommendations.push("Monitor bounce rates and unsubscribe feedback closely")
+    }
+
+    if (this.config.sentToday >= this.config.dailyLimit) {
+      recommendations.push("Daily limit reached - wait until tomorrow to continue warmup")
+    }
+
+    recommendations.push(`Send emails during business hours (${this.getTodaysSchedule().recommendedTimes.slice(0, 5).join(', ')}...)`)
+    recommendations.push("Maintain high engagement rates (>90% deliverability)")
+
+    return recommendations
+  }
+
+  // Export warmup data for analytics
+  exportData() {
+    return {
+      ...this.config,
+      schedule: this.schedule,
+      recommendations: this.getRecommendations(),
+      todaysSchedule: this.getTodaysSchedule()
+    }
+  }
+}
+
+// Global warmup service instance
+let warmupService: EmailWarmupService | null = null
+
+export function getWarmupService(domain?: string): EmailWarmupService {
+  if (!warmupService && domain) {
+    warmupService = new EmailWarmupService(domain)
+  }
+  if (!warmupService) {
+    throw new Error('Warmup service not initialized. Provide a domain.')
+  }
+  return warmupService
+}
+
+export function initializeWarmupService(domain: string, config?: Partial<WarmupConfig>) {
+  warmupService = new EmailWarmupService(domain)
+  if (config) {
+    warmupService.loadConfig({
+      domain,
+      startDate: config.startDate || new Date(),
+      currentDay: config.currentDay || 1,
+      dailyLimit: config.dailyLimit || 10,
+      sentToday: config.sentToday || 0,
+      reputation: config.reputation || 10
+    })
+  }
+}

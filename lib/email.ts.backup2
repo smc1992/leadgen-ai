@@ -1,0 +1,170 @@
+import nodemailer from 'nodemailer'
+import { resolveTxt } from 'dns'
+import { promisify } from 'util'
+
+const resolveTxtAsync = promisify(resolveTxt)
+
+export interface EmailConfig {
+  host: string
+  port: number
+  secure: boolean
+  auth: {
+    user: string
+    pass: string
+  }
+  from: string
+  fromName: string
+}
+
+export interface EmailOptions {
+  to: string
+  subject: string
+  html: string
+  text?: string
+}
+
+export class EmailService {
+  private transporter: nodemailer.Transporter | null = null
+  private config: EmailConfig | null = null
+
+  constructor(config?: EmailConfig) {
+    if (config) {
+      this.configure(config)
+    }
+  }
+
+  configure(config: EmailConfig) {
+    this.config = config
+    this.transporter = nodemailer.createTransporter({
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      auth: config.auth,
+      // Additional options for better deliverability
+      tls: {
+        rejectUnauthorized: false // In production, set to true
+      }
+    })
+  }
+
+  async verifyConnection(): Promise<boolean> {
+    if (!this.transporter) {
+      throw new Error('Email service not configured')
+    }
+
+    try {
+      await this.transporter.verify()
+      return true
+    } catch (error) {
+      console.error('SMTP connection failed:', error)
+      return false
+    }
+  }
+
+  async sendEmail(options: EmailOptions): Promise<nodemailer.SentMessageInfo> {
+    if (!this.transporter || !this.config) {
+      throw new Error('Email service not configured')
+    }
+
+    const mailOptions = {
+      from: `"${this.config.fromName}" <${this.config.from}>`,
+      to: options.to,
+      subject: options.subject,
+      html: options.html,
+      text: options.text,
+    }
+
+    try {
+      const result = await this.transporter.sendMail(mailOptions)
+      console.log('Email sent successfully:', result.messageId)
+      return result
+    } catch (error) {
+      console.error('Failed to send email:', error)
+      throw error
+    }
+  }
+
+  async sendBulkEmails(emails: EmailOptions[]): Promise<nodemailer.SentMessageInfo[]> {
+    const results: nodemailer.SentMessageInfo[] = []
+
+    // Send emails with rate limiting to avoid being marked as spam
+    for (const email of emails) {
+      try {
+        const result = await this.sendEmail(email)
+        results.push(result)
+
+        // Small delay between emails to respect rate limits
+        await new Promise(resolve => setTimeout(resolve, 100))
+      } catch (error) {
+        console.error(`Failed to send email to ${email.to}:`, error)
+        results.push({ error: error.message } as any)
+      }
+    }
+
+    return results
+  }
+
+  // SPF Record Validation
+  async validateSPF(domain: string): Promise<{ valid: boolean; records: string[] }> {
+    try {
+      const records = await resolveTxtAsync(`${domain}`)
+      const spfRecords = records
+        .flat()
+        .filter(record => record.startsWith('v=spf1'))
+
+      return {
+        valid: spfRecords.length > 0,
+        records: spfRecords
+      }
+    } catch (error) {
+      console.error('SPF validation failed:', error)
+      return { valid: false, records: [] }
+    }
+  }
+
+  // Domain validation (basic MX record check)
+  async validateDomain(domain: string): Promise<boolean> {
+    try {
+      const records = await resolveTxtAsync(`_dmarc.${domain}`)
+      return records.length > 0
+    } catch (error) {
+      // DMARC not required, but good to have
+      return true
+    }
+  }
+
+  // Get email sending limits based on warmup status
+  getDailySendLimit(domainAge: number, warmupDays: number): number {
+    // Base limits for different email providers
+    const baseLimits = {
+      gmail: 500,
+      outlook: 300,
+      yahoo: 200,
+      custom: 100
+    }
+
+    // Gradually increase limits during warmup
+    const warmupMultiplier = Math.min(warmupDays / 30, 1) // Max 30 days warmup
+    const ageMultiplier = Math.min(domainAge / 365, 1) // Max 1 year for full reputation
+
+    return Math.floor(baseLimits.custom * warmupMultiplier * ageMultiplier)
+  }
+}
+
+// Global email service instance
+let emailService: EmailService | null = null
+
+export function getEmailService(): EmailService {
+  if (!emailService) {
+    emailService = new EmailService()
+  }
+  return emailService
+}
+
+export function configureEmailService(config: EmailConfig) {
+  if (!emailService) {
+    emailService = new EmailService(config)
+  } else {
+    emailService.configure(config)
+  }
+}

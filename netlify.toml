@@ -1,0 +1,16 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_PRIVATE_STANDALONE = "true"
+  TURBOPACK = "0"
+  NEXT_WEBPACK_USEP = "true"
+
+[functions]
+  # Increase timeout for image generation
+  node_bundler = "esbuild"

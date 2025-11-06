@@ -1,0 +1,595 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Progress } from "@/components/ui/progress"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  Activity,
+  Mail,
+  Eye,
+  MousePointer,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Clock,
+  TrendingUp,
+  TrendingDown,
+  RefreshCw,
+  Download,
+  Filter,
+  Search,
+} from "lucide-react"
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
+
+interface CampaignMetrics {
+  campaign_id: string
+  campaign_name: string
+  sent: number
+  delivered: number
+  opened: number
+  clicked: number
+  bounced: number
+  unsubscribed: number
+  complained: number
+  replied: number
+  open_rate: number
+  click_rate: number
+  bounce_rate: number
+  unsubscribe_rate: number
+  last_updated: string
+}
+
+interface BounceRecord {
+  id: string
+  email: string
+  type: 'hard' | 'soft'
+  reason: string
+  timestamp: string
+  campaign_id: string
+}
+
+interface UnsubscribeRecord {
+  id: string
+  email: string
+  reason?: string
+  timestamp: string
+  campaign_id: string
+}
+
+// Mock real-time data
+const mockCampaigns: CampaignMetrics[] = [
+  {
+    campaign_id: "1",
+    campaign_name: "Air Freight USA Week 44",
+    sent: 250,
+    delivered: 248,
+    opened: 142,
+    clicked: 38,
+    bounced: 2,
+    unsubscribed: 3,
+    complained: 1,
+    replied: 12,
+    open_rate: 57.3,
+    click_rate: 15.3,
+    bounce_rate: 0.8,
+    unsubscribe_rate: 1.2,
+    last_updated: new Date().toISOString()
+  },
+  {
+    campaign_id: "2",
+    campaign_name: "Supply Chain Germany Q4",
+    sent: 180,
+    delivered: 178,
+    opened: 95,
+    clicked: 22,
+    bounced: 2,
+    unsubscribed: 2,
+    complained: 0,
+    replied: 8,
+    open_rate: 53.4,
+    click_rate: 12.2,
+    bounce_rate: 1.1,
+    unsubscribe_rate: 1.1,
+    last_updated: new Date().toISOString()
+  }
+]
+
+const mockBounces: BounceRecord[] = [
+  {
+    id: "1",
+    email: "invalid@domain.com",
+    type: "hard",
+    reason: "Mailbox does not exist",
+    timestamp: "2024-01-20 14:30",
+    campaign_id: "1"
+  },
+  {
+    id: "2",
+    email: "full@inbox.com",
+    type: "soft",
+    reason: "Mailbox full",
+    timestamp: "2024-01-20 15:45",
+    campaign_id: "1"
+  }
+]
+
+const mockUnsubscribes: UnsubscribeRecord[] = [
+  {
+    id: "1",
+    email: "user1@example.com",
+    reason: "Not interested",
+    timestamp: "2024-01-20 16:20",
+    campaign_id: "1"
+  },
+  {
+    id: "2",
+    email: "user2@example.com",
+    timestamp: "2024-01-20 17:10",
+    campaign_id: "2"
+  }
+]
+
+// Real-time data simulation
+const useRealtimeMetrics = (campaignId?: string) => {
+  const [metrics, setMetrics] = useState<CampaignMetrics[]>(mockCampaigns)
+  const [isLive, setIsLive] = useState(true)
+
+  useEffect(() => {
+    if (!isLive) return
+
+    const interval = setInterval(() => {
+      setMetrics(prev => prev.map(campaign => ({
+        ...campaign,
+        opened: campaign.opened + Math.floor(Math.random() * 3),
+        clicked: campaign.clicked + Math.floor(Math.random() * 2),
+        last_updated: new Date().toISOString()
+      })))
+    }, 5000) // Update every 5 seconds
+
+    return () => clearInterval(interval)
+  }, [isLive])
+
+  return { metrics, isLive, setIsLive }
+}
+
+export default function CampaignMonitoringPage() {
+  const { metrics, isLive, setIsLive } = useRealtimeMetrics()
+  const [selectedCampaign, setSelectedCampaign] = useState<string>("all")
+  const [timeRange, setTimeRange] = useState("24h")
+
+  const filteredMetrics = selectedCampaign === "all"
+    ? metrics
+    : metrics.filter(m => m.campaign_id === selectedCampaign)
+
+  const totalMetrics = filteredMetrics.reduce((acc, curr) => ({
+    sent: acc.sent + curr.sent,
+    delivered: acc.delivered + curr.delivered,
+    opened: acc.opened + curr.opened,
+    clicked: acc.clicked + curr.clicked,
+    bounced: acc.bounced + curr.bounced,
+    unsubscribed: acc.unsubscribed + curr.unsubscribed,
+    complained: acc.complained + curr.complained,
+    replied: acc.replied + curr.replied
+  }), {
+    sent: 0, delivered: 0, opened: 0, clicked: 0,
+    bounced: 0, unsubscribed: 0, complained: 0, replied: 0
+  })
+
+  const overallStats = {
+    openRate: ((totalMetrics.opened / totalMetrics.sent) * 100).toFixed(1),
+    clickRate: ((totalMetrics.clicked / totalMetrics.sent) * 100).toFixed(1),
+    bounceRate: ((totalMetrics.bounced / totalMetrics.sent) * 100).toFixed(1),
+    unsubscribeRate: ((totalMetrics.unsubscribed / totalMetrics.sent) * 100).toFixed(1),
+    replyRate: ((totalMetrics.replied / totalMetrics.sent) * 100).toFixed(1)
+  }
+
+  // Generate chart data
+  const chartData = filteredMetrics.map(m => ({
+    name: m.campaign_name.split(' ').slice(0, 2).join(' '),
+    sent: m.sent,
+    opened: m.opened,
+    clicked: m.clicked,
+    bounced: m.bounced
+  }))
+
+  const hourlyData = Array.from({ length: 24 }, (_, i) => ({
+    hour: i,
+    opens: Math.floor(Math.random() * 20) + 5,
+    clicks: Math.floor(Math.random() * 10) + 2
+  }))
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Campaign Monitoring</h1>
+          <p className="text-muted-foreground">
+            Real-time campaign performance and deliverability tracking
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setIsLive(!isLive)}
+            className={isLive ? "border-green-500 text-green-600" : ""}
+          >
+            <Activity className={`h-4 w-4 mr-2 ${isLive ? "animate-pulse" : ""}`} />
+            {isLive ? "Live" : "Paused"}
+          </Button>
+          <Button variant="outline">
+            <Download className="h-4 w-4 mr-2" />
+            Export
+          </Button>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-wrap gap-4">
+            <div className="flex-1 min-w-[200px]">
+              <label className="text-sm font-medium">Campaign</label>
+              <Select value={selectedCampaign} onValueChange={setSelectedCampaign}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Campaigns</SelectItem>
+                  {metrics.map(m => (
+                    <SelectItem key={m.campaign_id} value={m.campaign_id}>
+                      {m.campaign_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 min-w-[150px]">
+              <label className="text-sm font-medium">Time Range</label>
+              <Select value={timeRange} onValueChange={setTimeRange}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1h">Last Hour</SelectItem>
+                  <SelectItem value="24h">Last 24 Hours</SelectItem>
+                  <SelectItem value="7d">Last 7 Days</SelectItem>
+                  <SelectItem value="30d">Last 30 Days</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Overall Stats */}
+      <div className="grid gap-4 md:grid-cols-5">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Open Rate</CardTitle>
+            <Eye className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{overallStats.openRate}%</div>
+            <p className="text-xs text-muted-foreground">
+              {totalMetrics.opened} of {totalMetrics.sent}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Click Rate</CardTitle>
+            <MousePointer className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{overallStats.clickRate}%</div>
+            <p className="text-xs text-muted-foreground">
+              {totalMetrics.clicked} of {totalMetrics.sent}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Bounce Rate</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-600">{overallStats.bounceRate}%</div>
+            <p className="text-xs text-muted-foreground">
+              {totalMetrics.bounced} bounces
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Unsubscribe Rate</CardTitle>
+            <XCircle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-600">{overallStats.unsubscribeRate}%</div>
+            <p className="text-xs text-muted-foreground">
+              {totalMetrics.unsubscribed} unsubscribes
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Reply Rate</CardTitle>
+            <Mail className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{overallStats.replyRate}%</div>
+            <p className="text-xs text-muted-foreground">
+              {totalMetrics.replied} replies
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Tabs defaultValue="overview" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="realtime">Real-time Activity</TabsTrigger>
+          <TabsTrigger value="bounces">Bounce Management</TabsTrigger>
+          <TabsTrigger value="unsubscribes">Unsubscribe Handling</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-6">
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Campaign Performance Chart */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Campaign Performance</CardTitle>
+                <CardDescription>Email engagement by campaign</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="sent" fill="#3b82f6" name="Sent" />
+                    <Bar dataKey="opened" fill="#10b981" name="Opened" />
+                    <Bar dataKey="clicked" fill="#f59e0b" name="Clicked" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Hourly Activity */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Hourly Activity (Last 24h)</CardTitle>
+                <CardDescription>Opens and clicks by hour</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={hourlyData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="hour" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="opens" stroke="#10b981" strokeWidth={2} name="Opens" />
+                    <Line type="monotone" dataKey="clicked" stroke="#f59e0b" strokeWidth={2} name="Clicks" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Campaign Details Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Campaign Details</CardTitle>
+              <CardDescription>Detailed metrics for each campaign</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Campaign</TableHead>
+                    <TableHead>Sent</TableHead>
+                    <TableHead>Delivered</TableHead>
+                    <TableHead>Open Rate</TableHead>
+                    <TableHead>Click Rate</TableHead>
+                    <TableHead>Bounce Rate</TableHead>
+                    <TableHead>Last Updated</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredMetrics.map((campaign) => (
+                    <TableRow key={campaign.campaign_id}>
+                      <TableCell className="font-medium">{campaign.campaign_name}</TableCell>
+                      <TableCell>{campaign.sent}</TableCell>
+                      <TableCell>{campaign.delivered}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span>{campaign.open_rate}%</span>
+                          <Progress value={campaign.open_rate} className="w-16" />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span>{campaign.click_rate}%</span>
+                          <Progress value={campaign.click_rate} className="w-16" />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className={campaign.bounce_rate > 2 ? "text-red-600" : ""}>
+                          {campaign.bounce_rate}%
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(campaign.last_updated).toLocaleTimeString()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="realtime" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Live Activity Feed</CardTitle>
+              <CardDescription>Real-time email events and engagement</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {/* Mock live activity items */}
+                <div className="flex items-center gap-3 p-3 border rounded-lg">
+                  <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <Eye className="h-4 w-4 text-green-600" />
+                  <div className="flex-1">
+                    <p className="text-sm">john.smith@company.com opened your email</p>
+                    <p className="text-xs text-muted-foreground">Air Freight USA Week 44 • 2 minutes ago</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 p-3 border rounded-lg">
+                  <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse"></div>
+                  <MousePointer className="h-4 w-4 text-blue-600" />
+                  <div className="flex-1">
+                    <p className="text-sm">sarah.johnson@logistics.de clicked a link</p>
+                    <p className="text-xs text-muted-foreground">Supply Chain Germany Q4 • 5 minutes ago</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 p-3 border rounded-lg">
+                  <div className="h-2 w-2 bg-orange-500 rounded-full"></div>
+                  <Mail className="h-4 w-4 text-orange-600" />
+                  <div className="flex-1">
+                    <p className="text-sm">mike.chen@techcorp.com replied to your email</p>
+                    <p className="text-xs text-muted-foreground">Air Freight USA Week 44 • 8 minutes ago</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="bounces" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Bounce Management</CardTitle>
+              <CardDescription>Track and manage bounced emails</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-sm font-medium">Total Bounces: {totalMetrics.bounced}</p>
+                    <p className="text-xs text-muted-foreground">Across all campaigns</p>
+                  </div>
+                  <Button variant="outline" size="sm">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                </div>
+
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Reason</TableHead>
+                      <TableHead>Campaign</TableHead>
+                      <TableHead>Timestamp</TableHead>
+                      <TableHead>Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {mockBounces.map((bounce) => (
+                      <TableRow key={bounce.id}>
+                        <TableCell className="font-mono text-sm">{bounce.email}</TableCell>
+                        <TableCell>
+                          <Badge variant={bounce.type === 'hard' ? 'destructive' : 'secondary'}>
+                            {bounce.type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{bounce.reason}</TableCell>
+                        <TableCell>{bounce.campaign_id}</TableCell>
+                        <TableCell>{bounce.timestamp}</TableCell>
+                        <TableCell>
+                          <Button variant="outline" size="sm">
+                            Remove
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="unsubscribes" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Unsubscribe Management</CardTitle>
+              <CardDescription>Handle unsubscribe requests and maintain compliance</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Unsubscribed contacts are automatically removed from future campaigns to comply with regulations.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-sm font-medium">Total Unsubscribes: {totalMetrics.unsubscribed}</p>
+                    <p className="text-xs text-muted-foreground">Across all campaigns</p>
+                  </div>
+                  <Button variant="outline" size="sm">
+                    <Download className="h-4 w-4 mr-2" />
+                    Export List
+                  </Button>
+                </div>
+
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Reason</TableHead>
+                      <TableHead>Campaign</TableHead>
+                      <TableHead>Timestamp</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {mockUnsubscribes.map((unsub) => (
+                      <TableRow key={unsub.id}>
+                        <TableCell className="font-mono text-sm">{unsub.email}</TableCell>
+                        <TableCell>{unsub.reason || "No reason provided"}</TableCell>
+                        <TableCell>{unsub.campaign_id}</TableCell>
+                        <TableCell>{unsub.timestamp}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-green-600">
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            Processed
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}

@@ -1,0 +1,33 @@
+{
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:api": "jest --testPathPattern=api"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "setupFilesAfterEnv": ["<rootDir>/jest.setup.js"],
+    "testMatch": [
+      "**/__tests__/**/*.ts",
+      "**/?(*.)+(spec|test).ts"
+    ],
+    "collectCoverageFrom": [
+      "app/api/**/*.{ts,tsx}",
+      "!app/api/**/__tests__/**/*",
+      "!**/node_modules/**",
+      "!**/.next/**"
+    ],
+    "coverageDirectory": "coverage",
+    "coverageReporters": ["text", "lcov", "html"]
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.5",
+    "@types/supertest": "^2.0.12",
+    "jest": "^29.7.0",
+    "jest-environment-node": "^29.7.0",
+    "supertest": "^6.3.3",
+    "ts-jest": "^29.1.1"
+  }
+}

@@ -1,36 +1,147 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Emex Leadgen Tool - Complete Lead Generation Platform
 
-## Getting Started
+A comprehensive lead generation platform built with Next.js 14, TypeScript, Tailwind CSS, and Supabase.
 
-First, run the development server:
+## 🚀 Features
 
+### Core Functionality
+- **Lead Management**: Complete CRUD operations with advanced filtering and scoring
+- **Email Campaigns**: Create, launch, and track email campaigns with real-time analytics
+- **AI-Powered Chatbot**: Modern chat interface for assistance and insights
+- **Real Analytics**: Live dashboard with actual data from Supabase
+- **Knowledge Base**: Document management with AI-powered content generation
+
+### Integrations
+- **Supabase**: Database, authentication, and file storage
+- **Apify**: LinkedIn, Google Maps, and email validation scraping
+- **Instantly.ai**: Professional email campaign delivery
+- **NextAuth.js**: Secure authentication with multiple providers
+
+### Technical Features
+- **TypeScript**: Full type safety across the application
+- **Responsive Design**: Mobile-first with Tailwind CSS
+- **API Testing**: Comprehensive test suite with Jest
+- **Documentation**: Complete API and setup documentation
+- **Modern UI**: Beautiful, responsive design with shadcn-ui components
+
+## 📦 Tech Stack
+
+- **Framework**: Next.js 16+ (App Router)
+- **Styling**: TailwindCSS v4 + shadcn-ui
+- **Database**: Supabase (PostgreSQL)
+- **Icons**: Lucide React
+- **Charts**: Recharts
+- **State**: Zustand
+- **APIs**: Apify, Instantly, Blotato
+
+## 🛠️ Setup
+
+1. **Clone and install dependencies**:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. **Configure environment variables**:
+```bash
+cp env.example .env.local
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Edit `.env.local` with your API keys:
+- Supabase URL and Anon Key
+- Apify Token
+- Instantly API Key
+- Blotato API Key
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. **Set up Supabase database**:
 
-## Learn More
+Create the following tables in your Supabase project:
+- `leads`
+- `emails`
+- `campaigns`
+- `scrape_runs`
+- `content_items`
 
-To learn more about Next.js, take a look at the following resources:
+Refer to `supabase.md` for detailed schema.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+4. **Run development server**:
+```bash
+npm run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Open [http://localhost:3000](http://localhost:3000) to view the dashboard.
 
-## Deploy on Vercel
+## 📁 Project Structure
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+emex-dashboard/
+├── app/
+│   ├── (dashboard)/          # Dashboard routes
+│   │   ├── page.tsx          # Overview
+│   │   ├── leads/            # Lead management
+│   │   ├── outreach/         # Email campaigns
+│   │   ├── content/          # Content library
+│   │   ├── analytics/        # Analytics & charts
+│   │   └── calendar/         # Content calendar
+│   └── api/                  # API routes
+├── components/
+│   ├── ui/                   # shadcn-ui components
+│   └── app-sidebar.tsx       # Main navigation
+├── lib/
+│   ├── supabase.ts           # Supabase client
+│   ├── apify.ts              # Apify integration
+│   ├── instantly.ts          # Instantly API
+│   ├── blotato.ts            # Blotato API
+│   └── scoring.ts            # Lead scoring logic
+└── env.example               # Environment template
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🔑 Key Features
+
+### Lead Management
+- Import leads from LinkedIn and Google Maps via Apify
+- Automatic email validation
+- Smart scoring algorithm (0-100)
+- Filter by region, status, and score
+- Export/import CSV
+
+### Email Outreach
+- Create multi-step campaigns
+- Domain rotation
+- Track opens, clicks, replies
+- Bounce management
+- Integration with Instantly
+
+### Content Automation
+- AI text generation with Blotato
+- Video content creation
+- Multi-platform scheduling (LinkedIn, Facebook, Instagram, TikTok)
+- Engagement tracking
+
+### Analytics
+- Lead acquisition trends
+- Campaign performance metrics
+- Content engagement rates
+- Regional distribution
+
+## 🚢 Deployment
+
+Deploy to Vercel:
+
+```bash
+vercel deploy
+```
+
+Make sure to add all environment variables in Vercel dashboard.
+
+## 📚 Documentation
+
+- [setup.md](../setup.md) - Project initialization
+- [leads.md](../leads.md) - Lead data model
+- [emails.md](../emails.md) - Email outreach
+- [content.md](../content.md) - Content automation
+- [analytics.md](../analytics.md) - KPIs & tracking
+- [supabase.md](../supabase.md) - Database structure
+
+## 👥 Maintainer
+
+Emex Express Growth Team • October 2025

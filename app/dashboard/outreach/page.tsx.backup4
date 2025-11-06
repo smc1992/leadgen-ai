@@ -1,0 +1,277 @@
+"use client"
+
+import { useState } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Plus, Mail, TrendingUp, Users, Send } from "lucide-react"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { formatDateShort } from "@/lib/utils/date"
+
+// Mock data
+const mockCampaigns = [
+  {
+    id: "1",
+    name: "Air Freight USA Week 44",
+    template: "airfreight-intro-1",
+    domain: "logistics1.com",
+    sent: 250,
+    opened: 142,
+    clicked: 38,
+    replied: 12,
+    status: "active" as const,
+    created_at: "2025-10-25",
+  },
+  {
+    id: "2",
+    name: "Supply Chain Germany Q4",
+    template: "supply-chain-intro",
+    domain: "logistics2.com",
+    sent: 180,
+    opened: 95,
+    clicked: 22,
+    replied: 8,
+    status: "active" as const,
+    created_at: "2025-10-20",
+  },
+  {
+    id: "3",
+    name: "Nigeria Logistics Outreach",
+    template: "nigeria-intro",
+    domain: "logistics1.com",
+    sent: 120,
+    opened: 68,
+    clicked: 15,
+    replied: 5,
+    status: "paused" as const,
+    created_at: "2025-10-15",
+  },
+]
+
+export default function OutreachPage() {
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+
+  const totalSent = mockCampaigns.reduce((acc, c) => acc + c.sent, 0)
+  const totalOpened = mockCampaigns.reduce((acc, c) => acc + c.opened, 0)
+  const totalReplied = mockCampaigns.reduce((acc, c) => acc + c.replied, 0)
+  const openRate = ((totalOpened / totalSent) * 100).toFixed(1)
+  const replyRate = ((totalReplied / totalSent) * 100).toFixed(1)
+
+  const getStatusBadge = (status: string) => {
+    if (status === "active") return <Badge className="bg-green-600">Active</Badge>
+    if (status === "paused") return <Badge variant="outline">Paused</Badge>
+    return <Badge variant="secondary">Draft</Badge>
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Email Outreach</h1>
+          <p className="text-muted-foreground">
+            Manage campaigns and track email performance
+          </p>
+        </div>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Campaign
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[525px]">
+            <DialogHeader>
+              <DialogTitle>Create New Campaign</DialogTitle>
+              <DialogDescription>
+                Set up a new email outreach campaign
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="name">Campaign Name</Label>
+                <Input id="name" placeholder="e.g., Air Freight USA Week 45" />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="template">Email Template</Label>
+                <Select>
+                  <SelectTrigger id="template">
+                    <SelectValue placeholder="Select template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="airfreight-intro-1">Air Freight Intro v1</SelectItem>
+                    <SelectItem value="supply-chain-intro">Supply Chain Intro</SelectItem>
+                    <SelectItem value="nigeria-intro">Nigeria Logistics</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="domain">Sending Domain</Label>
+                <Select>
+                  <SelectTrigger id="domain">
+                    <SelectValue placeholder="Select domain" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="logistics1.com">logistics1.com</SelectItem>
+                    <SelectItem value="logistics2.com">logistics2.com</SelectItem>
+                    <SelectItem value="emex-express.com">emex-express.com</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="followups">Follow-up Emails</Label>
+                <Select defaultValue="3">
+                  <SelectTrigger id="followups">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">No follow-ups</SelectItem>
+                    <SelectItem value="1">1 follow-up</SelectItem>
+                    <SelectItem value="2">2 follow-ups</SelectItem>
+                    <SelectItem value="3">3 follow-ups</SelectItem>
+                    <SelectItem value="4">4 follow-ups</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => setIsDialogOpen(false)}>
+                Create Campaign
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Sent</CardTitle>
+            <Send className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalSent}</div>
+            <p className="text-xs text-muted-foreground">
+              Across {mockCampaigns.length} campaigns
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Open Rate</CardTitle>
+            <Mail className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{openRate}%</div>
+            <p className="text-xs text-muted-foreground">
+              {totalOpened} emails opened
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Reply Rate</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{replyRate}%</div>
+            <p className="text-xs text-muted-foreground">
+              {totalReplied} replies received
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Campaigns</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {mockCampaigns.filter(c => c.status === "active").length}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Currently running
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Campaigns</CardTitle>
+          <CardDescription>
+            Manage your email outreach campaigns
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Campaign</TableHead>
+                  <TableHead>Domain</TableHead>
+                  <TableHead>Sent</TableHead>
+                  <TableHead>Opened</TableHead>
+                  <TableHead>Clicked</TableHead>
+                  <TableHead>Replied</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {mockCampaigns.map((campaign) => (
+                  <TableRow key={campaign.id} className="cursor-pointer hover:bg-muted/50">
+                    <TableCell className="font-medium">{campaign.name}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{campaign.domain}</TableCell>
+                    <TableCell>{campaign.sent}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span>{campaign.opened}</span>
+                        <span className="text-xs text-muted-foreground">
+                          ({((campaign.opened / campaign.sent) * 100).toFixed(0)}%)
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span>{campaign.clicked}</span>
+                        <span className="text-xs text-muted-foreground">
+                          ({((campaign.clicked / campaign.sent) * 100).toFixed(0)}%)
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span>{campaign.replied}</span>
+                        <span className="text-xs text-muted-foreground">
+                          ({((campaign.replied / campaign.sent) * 100).toFixed(0)}%)
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>{getStatusBadge(campaign.status)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDateShort(campaign.created_at)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}

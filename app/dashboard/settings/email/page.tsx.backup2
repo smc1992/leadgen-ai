@@ -1,0 +1,527 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Progress } from "@/components/ui/progress"
+import { Separator } from "@/components/ui/separator"
+import {
+  Mail,
+  Shield,
+  Zap,
+  TestTube,
+  CheckCircle,
+  AlertCircle,
+  Settings,
+  Save,
+  RefreshCw,
+  Play,
+  Pause,
+  TrendingUp,
+  Clock,
+  Server,
+} from "lucide-react"
+import { toast } from "sonner"
+import { getEmailService, configureEmailService, type EmailConfig } from "@/lib/email"
+import { getWarmupService, initializeWarmupService } from "@/lib/email-warmup"
+
+interface EmailSettings {
+  smtp: EmailConfig
+  warmup: {
+    enabled: boolean
+    domain: string
+    startDate: string
+  }
+  deliverability: {
+    trackOpens: boolean
+    trackClicks: boolean
+    unsubscribeLink: boolean
+  }
+}
+
+export default function EmailSettingsPage() {
+  const [settings, setSettings] = useState<EmailSettings>({
+    smtp: {
+      host: '',
+      port: 587,
+      secure: false,
+      auth: {
+        user: '',
+        pass: ''
+      },
+      from: '',
+      fromName: ''
+    },
+    warmup: {
+      enabled: false,
+      domain: '',
+      startDate: new Date().toISOString().split('T')[0]
+    },
+    deliverability: {
+      trackOpens: true,
+      trackClicks: true,
+      unsubscribeLink: true
+    }
+  })
+
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
+  const [spfStatus, setSpfStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle')
+  const [warmupStatus, setWarmupStatus] = useState<any>(null)
+
+  const emailService = getEmailService()
+
+  useEffect(() => {
+    // Load settings from localStorage or API
+    const saved = localStorage.getItem('email-settings')
+    if (saved) {
+      setSettings(JSON.parse(saved))
+    }
+  }, [])
+
+  const handleSaveSettings = () => {
+    localStorage.setItem('email-settings', JSON.stringify(settings))
+    configureEmailService(settings.smtp)
+
+    if (settings.warmup.enabled && settings.warmup.domain) {
+      initializeWarmupService(settings.warmup.domain, {
+        startDate: new Date(settings.warmup.startDate),
+        currentDay: 1,
+        dailyLimit: 10,
+        sentToday: 0,
+        reputation: 10
+      })
+    }
+
+    toast.success("Email settings saved successfully")
+  }
+
+  const handleTestConnection = async () => {
+    setConnectionStatus('testing')
+    try {
+      configureEmailService(settings.smtp)
+      const success = await emailService.verifyConnection()
+      setConnectionStatus(success ? 'success' : 'error')
+      toast.success(success ? "SMTP connection successful" : "SMTP connection failed")
+    } catch (error) {
+      setConnectionStatus('error')
+      toast.error("Failed to test SMTP connection")
+    }
+  }
+
+  const handleCheckSPF = async () => {
+    if (!settings.warmup.domain) {
+      toast.error("Please enter a domain first")
+      return
+    }
+
+    setSpfStatus('checking')
+    try {
+      const result = await emailService.validateSPF(settings.warmup.domain)
+      setSpfStatus(result.valid ? 'valid' : 'invalid')
+
+      if (result.valid) {
+        toast.success("SPF record found and valid")
+      } else {
+        toast.error("SPF record not found or invalid")
+      }
+    } catch (error) {
+      setSpfStatus('invalid')
+      toast.error("Failed to check SPF record")
+    }
+  }
+
+  const handleTestEmail = async () => {
+    try {
+      await emailService.sendEmail({
+        to: settings.smtp.auth.user,
+        subject: "Test Email from Emex Dashboard",
+        html: `
+          <h2>Test Email</h2>
+          <p>This is a test email to verify your SMTP configuration.</p>
+          <p>Sent at: ${new Date().toLocaleString()}</p>
+        `,
+        text: "This is a test email to verify your SMTP configuration."
+      })
+      toast.success("Test email sent successfully")
+    } catch (error) {
+      toast.error("Failed to send test email")
+    }
+  }
+
+  const getWarmupProgress = () => {
+    if (!settings.warmup.enabled) return null
+
+    try {
+      const warmup = getWarmupService(settings.warmup.domain)
+      return warmup.getStatus()
+    } catch (error) {
+      return null
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Email Settings</h1>
+        <p className="text-muted-foreground">
+          Configure SMTP, warmup settings, and email deliverability
+        </p>
+      </div>
+
+      <Tabs defaultValue="smtp" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="smtp">
+            <Server className="h-4 w-4 mr-2" />
+            SMTP Configuration
+          </TabsTrigger>
+          <TabsTrigger value="warmup">
+            <Zap className="h-4 w-4 mr-2" />
+            Email Warmup
+          </TabsTrigger>
+          <TabsTrigger value="deliverability">
+            <Shield className="h-4 w-4 mr-2" />
+            Deliverability
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="smtp" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>SMTP Server Configuration</CardTitle>
+              <CardDescription>
+                Configure your email provider settings for sending emails
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="smtp-host">SMTP Host</Label>
+                  <Input
+                    id="smtp-host"
+                    placeholder="smtp.gmail.com"
+                    value={settings.smtp.host}
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      smtp: { ...prev.smtp, host: e.target.value }
+                    }))}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="smtp-port">Port</Label>
+                  <Input
+                    id="smtp-port"
+                    type="number"
+                    placeholder="587"
+                    value={settings.smtp.port}
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      smtp: { ...prev.smtp, port: parseInt(e.target.value) || 587 }
+                    }))}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="smtp-secure"
+                  checked={settings.smtp.secure}
+                  onCheckedChange={(checked) => setSettings(prev => ({
+                    ...prev,
+                    smtp: { ...prev.smtp, secure: checked }
+                  }))}
+                />
+                <Label htmlFor="smtp-secure">Use SSL/TLS</Label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="smtp-user">Email Address</Label>
+                  <Input
+                    id="smtp-user"
+                    type="email"
+                    placeholder="your-email@gmail.com"
+                    value={settings.smtp.auth.user}
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      smtp: {
+                        ...prev.smtp,
+                        auth: { ...prev.smtp.auth, user: e.target.value },
+                        from: e.target.value // Auto-fill from address
+                      }
+                    }))}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="smtp-pass">Password / App Password</Label>
+                  <Input
+                    id="smtp-pass"
+                    type="password"
+                    placeholder="your-app-password"
+                    value={settings.smtp.auth.pass}
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      smtp: {
+                        ...prev.smtp,
+                        auth: { ...prev.smtp.auth, pass: e.target.value }
+                      }
+                    }))}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="from-name">From Name</Label>
+                  <Input
+                    id="from-name"
+                    placeholder="Your Company Name"
+                    value={settings.smtp.fromName}
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      smtp: { ...prev.smtp, fromName: e.target.value }
+                    }))}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="from-email">From Email</Label>
+                  <Input
+                    id="from-email"
+                    type="email"
+                    placeholder="noreply@yourcompany.com"
+                    value={settings.smtp.from}
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      smtp: { ...prev.smtp, from: e.target.value }
+                    }))}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button onClick={handleTestConnection} disabled={connectionStatus === 'testing'}>
+                  {connectionStatus === 'testing' && <RefreshCw className="h-4 w-4 mr-2 animate-spin" />}
+                  Test Connection
+                </Button>
+                <Button onClick={handleTestEmail} variant="outline">
+                  <TestTube className="h-4 w-4 mr-2" />
+                  Send Test Email
+                </Button>
+              </div>
+
+              {connectionStatus === 'success' && (
+                <Alert>
+                  <CheckCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    SMTP connection successful! You can now send emails.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {connectionStatus === 'error' && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    SMTP connection failed. Please check your settings and try again.
+                  </AlertDescription>
+                </Alert>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="warmup" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Email Warmup Settings</CardTitle>
+              <CardDescription>
+                Gradually increase email sending volume to build sender reputation
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="warmup-enabled"
+                  checked={settings.warmup.enabled}
+                  onCheckedChange={(enabled) => setSettings(prev => ({
+                    ...prev,
+                    warmup: { ...prev.warmup, enabled }
+                  }))}
+                />
+                <Label htmlFor="warmup-enabled">Enable Email Warmup</Label>
+              </div>
+
+              {settings.warmup.enabled && (
+                <>
+                  <div>
+                    <Label htmlFor="warmup-domain">Domain</Label>
+                    <Input
+                      id="warmup-domain"
+                      placeholder="yourcompany.com"
+                      value={settings.warmup.domain}
+                      onChange={(e) => setSettings(prev => ({
+                        ...prev,
+                        warmup: { ...prev.warmup, domain: e.target.value }
+                      }))}
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button onClick={handleCheckSPF} disabled={spfStatus === 'checking'}>
+                      {spfStatus === 'checking' && <RefreshCw className="h-4 w-4 mr-2 animate-spin" />}
+                      Check SPF Record
+                    </Button>
+                  </div>
+
+                  {spfStatus === 'valid' && (
+                    <Alert>
+                      <CheckCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        SPF record found and valid for {settings.warmup.domain}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  {spfStatus === 'invalid' && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        SPF record not found or invalid. Please add SPF record to your DNS settings.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {settings.warmup.enabled && getWarmupProgress() && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Warmup Progress</CardTitle>
+                <CardDescription>
+                  Current status of your email warmup process
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {(() => {
+                  const progress = getWarmupProgress()!
+                  return (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span>Day {progress.currentDay} of 30</span>
+                        <span>{Math.round(progress.progress)}% Complete</span>
+                      </div>
+                      <Progress value={progress.progress} />
+
+                      <div className="grid grid-cols-3 gap-4 mt-4">
+                        <div className="text-center">
+                          <div className="text-2xl font-bold">{progress.sentToday}</div>
+                          <div className="text-sm text-muted-foreground">Sent Today</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold">{progress.dailyLimit}</div>
+                          <div className="text-sm text-muted-foreground">Daily Limit</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold">{progress.reputation}%</div>
+                          <div className="text-sm text-muted-foreground">Reputation</div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <h4 className="font-medium">Recommendations:</h4>
+                        <ul className="text-sm text-muted-foreground space-y-1">
+                          {progress.recommendations?.map((rec: string, i: number) => (
+                            <li key={i}>• {rec}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </>
+                  )
+                })()}
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="deliverability" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Email Deliverability Settings</CardTitle>
+              <CardDescription>
+                Configure tracking and compliance features
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Track Email Opens</Label>
+                  <div className="text-sm text-muted-foreground">
+                    Monitor when recipients open your emails
+                  </div>
+                </div>
+                <Switch
+                  checked={settings.deliverability.trackOpens}
+                  onCheckedChange={(checked) => setSettings(prev => ({
+                    ...prev,
+                    deliverability: { ...prev.deliverability, trackOpens: checked }
+                  }))}
+                />
+              </div>
+
+              <Separator />
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Track Link Clicks</Label>
+                  <div className="text-sm text-muted-foreground">
+                    Monitor when recipients click links in your emails
+                  </div>
+                </div>
+                <Switch
+                  checked={settings.deliverability.trackClicks}
+                  onCheckedChange={(checked) => setSettings(prev => ({
+                    ...prev,
+                    deliverability: { ...prev.deliverability, trackClicks: checked }
+                  }))}
+                />
+              </div>
+
+              <Separator />
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Add Unsubscribe Link</Label>
+                  <div className="text-sm text-muted-foreground">
+                    Automatically add unsubscribe links to comply with regulations
+                  </div>
+                </div>
+                <Switch
+                  checked={settings.deliverability.unsubscribeLink}
+                  onCheckedChange={(checked) => setSettings(prev => ({
+                    ...prev,
+                    deliverability: { ...prev.deliverability, unsubscribeLink: checked }
+                  }))}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <div className="flex justify-end">
+        <Button onClick={handleSaveSettings}>
+          <Save className="h-4 w-4 mr-2" />
+          Save Settings
+        </Button>
+      </div>
+    </div>
+  )
+}

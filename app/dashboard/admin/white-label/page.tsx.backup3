@@ -1,0 +1,606 @@
+"use client"
+
+import { useState } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Switch } from "@/components/ui/switch"
+import {
+  Palette,
+  Upload,
+  Save,
+  Eye,
+  RefreshCw,
+  Settings,
+  Globe,
+  Mail,
+  FileText,
+  BarChart3,
+} from "lucide-react"
+import { toast } from "sonner"
+
+interface BrandingSettings {
+  companyName: string
+  logo: string
+  favicon: string
+  primaryColor: string
+  secondaryColor: string
+  accentColor: string
+  fontFamily: string
+}
+
+interface FeatureSettings {
+  emailOutreach: boolean
+  leadManagement: boolean
+  analytics: boolean
+  aiFeatures: boolean
+  automation: boolean
+  customDomains: boolean
+}
+
+interface WhiteLabelConfig {
+  branding: BrandingSettings
+  features: FeatureSettings
+  customDomain: string
+  smtpSettings: {
+    provider: string
+    customFromDomain: string
+  }
+}
+
+const defaultConfig: WhiteLabelConfig = {
+  branding: {
+    companyName: "Emex Leads",
+    logo: "/logo.png",
+    favicon: "/favicon.ico",
+    primaryColor: "#3b82f6",
+    secondaryColor: "#64748b",
+    accentColor: "#10b981",
+    fontFamily: "Inter"
+  },
+  features: {
+    emailOutreach: true,
+    leadManagement: true,
+    analytics: true,
+    aiFeatures: true,
+    automation: true,
+    customDomains: false
+  },
+  customDomain: "",
+  smtpSettings: {
+    provider: "default",
+    customFromDomain: ""
+  }
+}
+
+export default function WhiteLabelAdminPage() {
+  const [config, setConfig] = useState<WhiteLabelConfig>(defaultConfig)
+  const [previewMode, setPreviewMode] = useState(false)
+
+  const handleSaveConfig = () => {
+    // In a real app, this would save to database
+    localStorage.setItem('white-label-config', JSON.stringify(config))
+    toast.success("White-label settings saved successfully!")
+  }
+
+  const handleResetToDefault = () => {
+    setConfig(defaultConfig)
+    toast.info("Reset to default Emex branding")
+  }
+
+  const handleExportConfig = () => {
+    const dataStr = JSON.stringify(config, null, 2)
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr)
+
+    const exportFileDefaultName = 'white-label-config.json'
+
+    const linkElement = document.createElement('a')
+    linkElement.setAttribute('href', dataUri)
+    linkElement.setAttribute('download', exportFileDefaultName)
+    linkElement.click()
+
+    toast.success("Configuration exported successfully!")
+  }
+
+  const updateBranding = (field: keyof BrandingSettings, value: string) => {
+    setConfig(prev => ({
+      ...prev,
+      branding: {
+        ...prev.branding,
+        [field]: value
+      }
+    }))
+  }
+
+  const updateFeatures = (field: keyof FeatureSettings, value: boolean) => {
+    setConfig(prev => ({
+      ...prev,
+      features: {
+        ...prev.features,
+        [field]: value
+      }
+    }))
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">White-Label Administration</h1>
+          <p className="text-muted-foreground">
+            Customize the platform branding and features for your clients
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setPreviewMode(!previewMode)}>
+            <Eye className="h-4 w-4 mr-2" />
+            {previewMode ? 'Exit Preview' : 'Preview Changes'}
+          </Button>
+          <Button variant="outline" onClick={handleExportConfig}>
+            <FileText className="h-4 w-4 mr-2" />
+            Export Config
+          </Button>
+          <Button variant="outline" onClick={handleResetToDefault}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Reset to Default
+          </Button>
+          <Button onClick={handleSaveConfig}>
+            <Save className="h-4 w-4 mr-2" />
+            Save Configuration
+          </Button>
+        </div>
+      </div>
+
+      {/* Preview Mode Banner */}
+      {previewMode && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center gap-2">
+            <Eye className="h-5 w-5 text-blue-600" />
+            <div>
+              <p className="font-medium text-blue-800">Preview Mode Active</p>
+              <p className="text-sm text-blue-600">
+                You're seeing how the platform will look with your custom branding applied.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Tabs defaultValue="branding" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="branding">
+            <Palette className="h-4 w-4 mr-2" />
+            Branding
+          </TabsTrigger>
+          <TabsTrigger value="features">
+            <Settings className="h-4 w-4 mr-2" />
+            Features
+          </TabsTrigger>
+          <TabsTrigger value="domain">
+            <Globe className="h-4 w-4 mr-2" />
+            Domain & SMTP
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="branding" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Company Branding</CardTitle>
+              <CardDescription>
+                Customize the visual identity of your white-label platform
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="company-name">Company Name</Label>
+                    <Input
+                      id="company-name"
+                      value={config.branding.companyName}
+                      onChange={(e) => updateBranding('companyName', e.target.value)}
+                      placeholder="Your Company Name"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="logo">Logo URL</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="logo"
+                        value={config.branding.logo}
+                        onChange={(e) => updateBranding('logo', e.target.value)}
+                        placeholder="https://example.com/logo.png"
+                      />
+                      <Button variant="outline" size="sm">
+                        <Upload className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="favicon">Favicon URL</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="favicon"
+                        value={config.branding.favicon}
+                        onChange={(e) => updateBranding('favicon', e.target.value)}
+                        placeholder="https://example.com/favicon.ico"
+                      />
+                      <Button variant="outline" size="sm">
+                        <Upload className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="font-family">Font Family</Label>
+                    <Select value={config.branding.fontFamily} onValueChange={(value) => updateBranding('fontFamily', value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Inter">Inter</SelectItem>
+                        <SelectItem value="Roboto">Roboto</SelectItem>
+                        <SelectItem value="Open Sans">Open Sans</SelectItem>
+                        <SelectItem value="Lato">Lato</SelectItem>
+                        <SelectItem value="Poppins">Poppins</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <Label>Color Scheme</Label>
+                    <div className="grid grid-cols-3 gap-4 mt-2">
+                      <div>
+                        <Label className="text-xs">Primary</Label>
+                        <div className="flex gap-2 mt-1">
+                          <input
+                            type="color"
+                            value={config.branding.primaryColor}
+                            onChange={(e) => updateBranding('primaryColor', e.target.value)}
+                            className="w-8 h-8 rounded border"
+                          />
+                          <Input
+                            value={config.branding.primaryColor}
+                            onChange={(e) => updateBranding('primaryColor', e.target.value)}
+                            className="flex-1 text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <Label className="text-xs">Secondary</Label>
+                        <div className="flex gap-2 mt-1">
+                          <input
+                            type="color"
+                            value={config.branding.secondaryColor}
+                            onChange={(e) => updateBranding('secondaryColor', e.target.value)}
+                            className="w-8 h-8 rounded border"
+                          />
+                          <Input
+                            value={config.branding.secondaryColor}
+                            onChange={(e) => updateBranding('secondaryColor', e.target.value)}
+                            className="flex-1 text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <Label className="text-xs">Accent</Label>
+                        <div className="flex gap-2 mt-1">
+                          <input
+                            type="color"
+                            value={config.branding.accentColor}
+                            onChange={(e) => updateBranding('accentColor', e.target.value)}
+                            className="w-8 h-8 rounded border"
+                          />
+                          <Input
+                            value={config.branding.accentColor}
+                            onChange={(e) => updateBranding('accentColor', e.target.value)}
+                            className="flex-1 text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Preview */}
+                  <div className="border rounded-lg p-4 bg-muted/50">
+                    <Label className="text-sm font-medium mb-3 block">Live Preview</Label>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-8 h-8 rounded flex items-center justify-center text-white text-sm font-bold"
+                          style={{ backgroundColor: config.branding.primaryColor }}
+                        >
+                          {config.branding.companyName.charAt(0)}
+                        </div>
+                        <span className="font-medium" style={{ color: config.branding.primaryColor }}>
+                          {config.branding.companyName}
+                        </span>
+                      </div>
+
+                      <Button
+                        size="sm"
+                        style={{
+                          backgroundColor: config.branding.primaryColor,
+                          borderColor: config.branding.primaryColor
+                        }}
+                      >
+                        Sample Button
+                      </Button>
+
+                      <div className="flex gap-2">
+                        <Badge style={{ backgroundColor: config.branding.secondaryColor }}>
+                          Sample Badge
+                        </Badge>
+                        <Badge variant="outline" style={{ borderColor: config.branding.accentColor, color: config.branding.accentColor }}>
+                          Accent Badge
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="features" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Feature Configuration</CardTitle>
+              <CardDescription>
+                Enable or disable platform features for your white-label clients
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-6">
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <Mail className="h-5 w-5 text-blue-600" />
+                    <div>
+                      <p className="font-medium">Email Outreach</p>
+                      <p className="text-sm text-muted-foreground">
+                        Campaigns, sequences, templates, and SMTP management
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={config.features.emailOutreach}
+                    onCheckedChange={(checked) => updateFeatures('emailOutreach', checked)}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <BarChart3 className="h-5 w-5 text-green-600" />
+                    <div>
+                      <p className="font-medium">Lead Management</p>
+                      <p className="text-sm text-muted-foreground">
+                        Lead database, scoring, enrichment, and CRM features
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={config.features.leadManagement}
+                    onCheckedChange={(checked) => updateFeatures('leadManagement', checked)}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <BarChart3 className="h-5 w-5 text-purple-600" />
+                    <div>
+                      <p className="font-medium">Analytics & Reporting</p>
+                      <p className="text-sm text-muted-foreground">
+                        Performance dashboards, campaign analytics, and insights
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={config.features.analytics}
+                    onCheckedChange={(checked) => updateFeatures('analytics', checked)}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <Settings className="h-5 w-5 text-orange-600" />
+                    <div>
+                      <p className="font-medium">AI Features</p>
+                      <p className="text-sm text-muted-foreground">
+                        Lead scoring, email personalization, content generation
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={config.features.aiFeatures}
+                    onCheckedChange={(checked) => updateFeatures('aiFeatures', checked)}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <Zap className="h-5 w-5 text-red-600" />
+                    <div>
+                      <p className="font-medium">Automation</p>
+                      <p className="text-sm text-muted-foreground">
+                        Workflows, sequences, and automated campaign management
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={config.features.automation}
+                    onCheckedChange={(checked) => updateFeatures('automation', checked)}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <Globe className="h-5 w-5 text-indigo-600" />
+                    <div>
+                      <p className="font-medium">Custom Domains</p>
+                      <p className="text-sm text-muted-foreground">
+                        White-label domains and custom branding URLs
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={config.features.customDomains}
+                    onCheckedChange={(checked) => updateFeatures('customDomains', checked)}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="domain" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Domain & SMTP Configuration</CardTitle>
+              <CardDescription>
+                Set up custom domains and email sending configurations
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div>
+                <Label htmlFor="custom-domain">Custom Domain</Label>
+                <Input
+                  id="custom-domain"
+                  value={config.customDomain}
+                  onChange={(e) => setConfig(prev => ({ ...prev, customDomain: e.target.value }))}
+                  placeholder="dashboard.yourcompany.com"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Leave empty to use the default domain
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>SMTP Provider</Label>
+                  <Select
+                    value={config.smtpSettings.provider}
+                    onValueChange={(value) => setConfig(prev => ({
+                      ...prev,
+                      smtpSettings: { ...prev.smtpSettings, provider: value }
+                    }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Use Platform Default</SelectItem>
+                      <SelectItem value="gmail">Gmail</SelectItem>
+                      <SelectItem value="outlook">Outlook</SelectItem>
+                      <SelectItem value="sendgrid">SendGrid</SelectItem>
+                      <SelectItem value="custom">Custom SMTP</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="from-domain">From Domain</Label>
+                  <Input
+                    id="from-domain"
+                    value={config.smtpSettings.customFromDomain}
+                    onChange={(e) => setConfig(prev => ({
+                      ...prev,
+                      smtpSettings: { ...prev.smtpSettings, customFromDomain: e.target.value }
+                    }))}
+                    placeholder="noreply@yourcompany.com"
+                  />
+                </div>
+              </div>
+
+              {config.smtpSettings.provider !== 'default' && (
+                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Settings className="h-4 w-4 text-yellow-600" />
+                    <div>
+                      <p className="font-medium text-yellow-800">Custom SMTP Required</p>
+                      <p className="text-sm text-yellow-700">
+                        You'll need to configure SMTP credentials for {config.smtpSettings.provider}.
+                        Go to Email Settings to set this up.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {config.customDomain && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Globe className="h-4 w-4 text-blue-600" />
+                    <div>
+                      <p className="font-medium text-blue-800">DNS Configuration Required</p>
+                      <p className="text-sm text-blue-700">
+                        To use {config.customDomain}, you'll need to:
+                      </p>
+                      <ul className="text-sm text-blue-700 mt-2 list-disc list-inside space-y-1">
+                        <li>Add a CNAME record pointing to your platform domain</li>
+                        <li>Configure SSL certificate for HTTPS</li>
+                        <li>Update email SPF/DKIM records for custom domain</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Client Onboarding</CardTitle>
+              <CardDescription>
+                Generate setup instructions for your white-label clients
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Onboarding Email Template</Label>
+                <Textarea
+                  placeholder="Dear [Client Name],
+
+Welcome to [Your Company]! Your white-label platform is ready at: [Custom Domain]
+
+Here's what we've set up for you:
+- Custom branding with your logo and colors
+- [List enabled features]
+- [SMTP configuration if applicable]
+
+To get started, visit [Dashboard URL] and log in with the credentials we provided.
+
+Best regards,
+[Your Company] Team"
+                  rows={8}
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Button variant="outline">
+                  <Mail className="h-4 w-4 mr-2" />
+                  Send Onboarding Email
+                </Button>
+                <Button variant="outline">
+                  <FileText className="h-4 w-4 mr-2" />
+                  Generate Setup Guide
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}

@@ -1,0 +1,647 @@
+"use client"
+
+import { useState } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Plus,
+  Mail,
+  Clock,
+  ArrowRight,
+  Settings,
+  Play,
+  Pause,
+  Trash2,
+  Copy,
+  Zap,
+  CheckCircle,
+  AlertTriangle,
+  Eye,
+  Save,
+} from "lucide-react"
+import { toast } from "sonner"
+
+interface SequenceStep {
+  id: string
+  type: 'email' | 'delay' | 'condition' | 'action'
+  name: string
+  config: any
+  position: { x: number; y: number }
+  connections: string[] // IDs of connected steps
+}
+
+interface EmailSequence {
+  id: string
+  name: string
+  description: string
+  status: 'draft' | 'active' | 'paused'
+  steps: SequenceStep[]
+  triggers: string[]
+  created_at: string
+  last_run?: string
+  total_sent: number
+  total_opened: number
+  total_clicked: number
+}
+
+// Mock sequences
+const mockSequences: EmailSequence[] = [
+  {
+    id: "1",
+    name: "Lead Nurture Sequence",
+    description: "3-email nurture sequence for new leads",
+    status: "active",
+    created_at: "2024-01-15",
+    last_run: "2024-01-20",
+    total_sent: 245,
+    total_opened: 89,
+    total_clicked: 23,
+    triggers: ["lead_imported"],
+    steps: [
+      {
+        id: "step-1",
+        type: "email",
+        name: "Welcome Email",
+        config: { template_id: "welcome-1", subject: "Welcome to Emex Leads!" },
+        position: { x: 100, y: 100 },
+        connections: ["step-2"]
+      },
+      {
+        id: "step-2",
+        type: "delay",
+        name: "Wait 3 days",
+        config: { days: 3 },
+        position: { x: 300, y: 100 },
+        connections: ["step-3"]
+      },
+      {
+        id: "step-3",
+        type: "email",
+        name: "Follow-up",
+        config: { template_id: "followup-1", subject: "How can we help your business?" },
+        position: { x: 500, y: 100 },
+        connections: []
+      }
+    ]
+  }
+]
+
+export default function EmailSequencesPage() {
+  const [sequences, setSequences] = useState<EmailSequence[]>(mockSequences)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [selectedSequence, setSelectedSequence] = useState<EmailSequence | null>(null)
+  const [builderOpen, setBuilderOpen] = useState(false)
+  const [draggedStep, setDraggedStep] = useState<SequenceStep | null>(null)
+
+  const handleCreateSequence = () => {
+    const newSequence: EmailSequence = {
+      id: Date.now().toString(),
+      name: "New Sequence",
+      description: "Description of the email sequence",
+      status: "draft",
+      steps: [],
+      triggers: [],
+      created_at: new Date().toISOString().split('T')[0],
+      total_sent: 0,
+      total_opened: 0,
+      total_clicked: 0
+    }
+    setSequences(prev => [...prev, newSequence])
+    setSelectedSequence(newSequence)
+    setBuilderOpen(true)
+    setCreateDialogOpen(false)
+  }
+
+  const handleEditSequence = (sequence: EmailSequence) => {
+    setSelectedSequence(sequence)
+    setBuilderOpen(true)
+  }
+
+  const handleDeleteSequence = (id: string) => {
+    setSequences(prev => prev.filter(s => s.id !== id))
+    toast.success("Sequence deleted successfully")
+  }
+
+  const handleToggleSequence = (id: string) => {
+    setSequences(prev => prev.map(s =>
+      s.id === id
+        ? { ...s, status: s.status === 'active' ? 'paused' : 'active' }
+        : s
+    ))
+    toast.success("Sequence status updated")
+  }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'active':
+        return <Badge className="bg-green-600">Active</Badge>
+      case 'paused':
+        return <Badge className="bg-yellow-600">Paused</Badge>
+      case 'draft':
+        return <Badge variant="outline">Draft</Badge>
+      default:
+        return <Badge variant="outline">Unknown</Badge>
+    }
+  }
+
+  const getStepIcon = (type: string) => {
+    switch (type) {
+      case 'email':
+        return <Mail className="h-4 w-4" />
+      case 'delay':
+        return <Clock className="h-4 w-4" />
+      case 'condition':
+        return <AlertTriangle className="h-4 w-4" />
+      case 'action':
+        return <Zap className="h-4 w-4" />
+      default:
+        return <Settings className="h-4 w-4" />
+    }
+  }
+
+  const addStepToSequence = (stepType: SequenceStep['type']) => {
+    if (!selectedSequence) return
+
+    const newStep: SequenceStep = {
+      id: `step-${Date.now()}`,
+      type: stepType,
+      name: `${stepType.charAt(0).toUpperCase() + stepType.slice(1)} Step`,
+      config: {},
+      position: { x: 100 + selectedSequence.steps.length * 200, y: 100 },
+      connections: []
+    }
+
+    setSelectedSequence(prev => prev ? {
+      ...prev,
+      steps: [...prev.steps, newStep]
+    } : null)
+  }
+
+  const renderStepConfig = (step: SequenceStep) => {
+    switch (step.type) {
+      case 'email':
+        return (
+          <div className="space-y-3">
+            <div>
+              <Label>Subject Line</Label>
+              <Input
+                placeholder="Email subject..."
+                value={step.config.subject || ''}
+                onChange={(e) => {
+                  // Update step config
+                  setSelectedSequence(prev => prev ? {
+                    ...prev,
+                    steps: prev.steps.map(s =>
+                      s.id === step.id
+                        ? { ...s, config: { ...s.config, subject: e.target.value } }
+                        : s
+                    )
+                  } : null)
+                }}
+              />
+            </div>
+            <div>
+              <Label>Template</Label>
+              <Select value={step.config.template_id || ''}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select template" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="welcome-1">Welcome Email</SelectItem>
+                  <SelectItem value="followup-1">Follow-up Email</SelectItem>
+                  <SelectItem value="nurture-1">Nurture Email</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )
+      case 'delay':
+        return (
+          <div className="space-y-3">
+            <div>
+              <Label>Delay Duration</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  placeholder="3"
+                  value={step.config.days || ''}
+                  onChange={(e) => {
+                    setSelectedSequence(prev => prev ? {
+                      ...prev,
+                      steps: prev.steps.map(s =>
+                        s.id === step.id
+                          ? { ...s, config: { ...s.config, days: parseInt(e.target.value) } }
+                          : s
+                      )
+                    } : null)
+                  }}
+                />
+                <Select value={step.config.unit || 'days'}>
+                  <SelectTrigger className="w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="minutes">Min</SelectItem>
+                    <SelectItem value="hours">Hours</SelectItem>
+                    <SelectItem value="days">Days</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        )
+      case 'condition':
+        return (
+          <div className="space-y-3">
+            <div>
+              <Label>Condition</Label>
+              <Select value={step.config.condition || ''}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select condition" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="opened">Email was opened</SelectItem>
+                  <SelectItem value="clicked">Link was clicked</SelectItem>
+                  <SelectItem value="replied">Email was replied</SelectItem>
+                  <SelectItem value="not_opened">Email not opened</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Within (days)</Label>
+              <Input
+                type="number"
+                placeholder="7"
+                value={step.config.within_days || ''}
+              />
+            </div>
+          </div>
+        )
+      default:
+        return <div>Configure step settings</div>
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Email Sequences</h1>
+          <p className="text-muted-foreground">
+            Create automated email sequences with conditional logic and delays
+          </p>
+        </div>
+        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Sequence
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New Sequence</DialogTitle>
+              <DialogDescription>
+                Build automated email sequences for lead nurturing
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div>
+                <Label htmlFor="sequence-name">Sequence Name</Label>
+                <Input id="sequence-name" placeholder="e.g., Lead Nurture Sequence" />
+              </div>
+              <div>
+                <Label htmlFor="sequence-desc">Description</Label>
+                <Textarea id="sequence-desc" placeholder="Describe this sequence..." />
+              </div>
+              <div>
+                <Label>Trigger</Label>
+                <Select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="When to start" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="lead_imported">When lead is imported</SelectItem>
+                    <SelectItem value="lead_scored">When lead score changes</SelectItem>
+                    <SelectItem value="manual">Manual trigger</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleCreateSequence}>
+                Create Sequence
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Stats */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Sequences</CardTitle>
+            <Mail className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{sequences.length}</div>
+            <p className="text-xs text-muted-foreground">
+              Automated workflows
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Sequences</CardTitle>
+            <Play className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">
+              {sequences.filter(s => s.status === 'active').length}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Currently running
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Steps</CardTitle>
+            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {sequences.reduce((acc, s) => acc + s.steps.length, 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Sequence steps
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Avg Open Rate</CardTitle>
+            <Eye className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">
+              {sequences.length > 0
+                ? Math.round(sequences.reduce((acc, s) => acc + (s.total_opened / Math.max(s.total_sent, 1)), 0) / sequences.length * 100)
+                : 0}%
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Across all sequences
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Sequences List */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Email Sequences</CardTitle>
+          <CardDescription>
+            Manage your automated email sequences
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {sequences.map((sequence) => (
+              <div
+                key={sequence.id}
+                className="flex items-start gap-4 rounded-lg border p-4 hover:bg-muted/50"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                  <Mail className="h-4 w-4" />
+                </div>
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium">{sequence.name}</h3>
+                      {getStatusBadge(sequence.status)}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleToggleSequence(sequence.id)}
+                      >
+                        {sequence.status === 'active' ? (
+                          <Pause className="h-4 w-4" />
+                        ) : (
+                          <Play className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEditSequence(sequence)}
+                      >
+                        <Settings className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteSequence(sequence.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{sequence.description}</p>
+                  <div className="flex items-center gap-6 text-xs text-muted-foreground">
+                    <span>{sequence.steps.length} steps</span>
+                    <span>Sent: {sequence.total_sent}</span>
+                    <span>Opened: {sequence.total_opened}</span>
+                    <span>Clicked: {sequence.total_clicked}</span>
+                    <span>Created {sequence.created_at}</span>
+                    {sequence.last_run && <span>Last run {sequence.last_run}</span>}
+                  </div>
+                  {sequence.steps.length > 0 && (
+                    <div className="flex items-center gap-2 mt-3">
+                      {sequence.steps.map((step, index) => (
+                        <div key={step.id} className="flex items-center gap-1">
+                          <div className="flex items-center gap-2 bg-muted rounded px-3 py-2">
+                            {getStepIcon(step.type)}
+                            <span className="text-sm font-medium">{step.name}</span>
+                          </div>
+                          {index < sequence.steps.length - 1 && (
+                            <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {sequences.length === 0 && (
+              <div className="text-center py-8">
+                <Mail className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-medium mb-2">No sequences yet</h3>
+                <p className="text-muted-foreground mb-4">
+                  Create your first automated email sequence to nurture leads.
+                </p>
+                <Button onClick={() => setCreateDialogOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Sequence
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Sequence Builder Dialog */}
+      <Dialog open={builderOpen} onOpenChange={setBuilderOpen}>
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>
+              Sequence Builder - {selectedSequence?.name || 'New Sequence'}
+            </DialogTitle>
+            <DialogDescription>
+              Build automated email sequences with conditional logic and delays
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex gap-4 h-96">
+            {/* Toolbox */}
+            <div className="w-64 border rounded-lg p-4 space-y-4">
+              <div>
+                <h4 className="font-medium mb-3">Add Steps</h4>
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => addStepToSequence('email')}
+                  >
+                    <Mail className="h-4 w-4 mr-2" />
+                    Email Step
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => addStepToSequence('delay')}
+                  >
+                    <Clock className="h-4 w-4 mr-2" />
+                    Delay
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => addStepToSequence('condition')}
+                  >
+                    <AlertTriangle className="h-4 w-4 mr-2" />
+                    Condition
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => addStepToSequence('action')}
+                  >
+                    <Zap className="h-4 w-4 mr-2" />
+                    Action
+                  </Button>
+                </div>
+              </div>
+
+              {/* Step Configuration */}
+              {selectedSequence?.steps.find(s => s.id === 'selected-step') && (
+                <div>
+                  <h4 className="font-medium mb-3">Configure Step</h4>
+                  {renderStepConfig(selectedSequence.steps.find(s => s.id === 'selected-step')!)}
+                </div>
+              )}
+            </div>
+
+            {/* Canvas */}
+            <div className="flex-1 border rounded-lg bg-muted/20 relative overflow-auto">
+              <div className="absolute inset-0 p-4 min-h-full">
+                {selectedSequence?.steps.map((step) => (
+                  <div
+                    key={step.id}
+                    className="absolute bg-white border rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow min-w-[200px]"
+                    style={{ left: step.position.x, top: step.position.y }}
+                    onClick={() => {
+                      // Mark step as selected for configuration
+                      setSelectedSequence(prev => prev ? {
+                        ...prev,
+                        steps: prev.steps.map(s => ({
+                          ...s,
+                          selected: s.id === step.id
+                        }))
+                      } : null)
+                    }}
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className={`p-2 rounded ${step.type === 'email' ? 'bg-blue-100 text-blue-600' : step.type === 'delay' ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-600'}`}>
+                        {getStepIcon(step.type)}
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-sm">{step.name}</h4>
+                        <p className="text-xs text-muted-foreground capitalize">{step.type}</p>
+                      </div>
+                    </div>
+
+                    {step.type === 'email' && step.config.subject && (
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Subject: {step.config.subject}
+                      </p>
+                    )}
+
+                    {step.type === 'delay' && step.config.days && (
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Wait {step.config.days} {step.config.unit || 'days'}
+                      </p>
+                    )}
+
+                    {step.connections.length > 0 && (
+                      <div className="flex justify-end">
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {(!selectedSequence?.steps || selectedSequence.steps.length === 0) && (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <Mail className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground mb-4">Add your first step to start building the sequence</p>
+                      <Button onClick={() => addStepToSequence('email')}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Email Step
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center">
+            <div className="text-sm text-muted-foreground">
+              {selectedSequence?.steps.length || 0} steps in sequence
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setBuilderOpen(false)}>
+                Save & Close
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

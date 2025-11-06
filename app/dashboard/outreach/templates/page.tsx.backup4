@@ -1,0 +1,267 @@
+"use client"
+
+import { useState } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Plus, Mail, Edit, Copy, Trash2, Eye } from "lucide-react"
+import { EmailTemplateBuilder } from "@/components/content/email-template-builder"
+import { toast } from "sonner"
+
+interface EmailTemplate {
+  id: string
+  name: string
+  subject: string
+  content: string
+  variables: string[]
+  created_at: string
+  last_used?: string
+}
+
+// Mock templates
+const mockTemplates: EmailTemplate[] = [
+  {
+    id: "1",
+    name: "Initial Outreach",
+    subject: "Streamlining {{company}}'s Supply Chain Operations",
+    content: "<p>Hi {{firstName}},</p><p>I'm reaching out about opportunities to optimize your logistics operations...</p>",
+    variables: ["{{firstName}}", "{{company}}"],
+    created_at: "2024-01-10",
+    last_used: "2024-01-15",
+  },
+  {
+    id: "2",
+    name: "Follow-up Email",
+    subject: "Following up on our supply chain discussion",
+    content: "<p>Hello {{firstName}},</p><p>I wanted to follow up on my previous email about...</p>",
+    variables: ["{{firstName}}"],
+    created_at: "2024-01-12",
+  },
+  {
+    id: "3",
+    name: "Nurture Sequence",
+    subject: "Industry insights for {{company}}",
+    content: "<p>Dear {{firstName}},</p><p>Here are some recent industry developments that might interest you...</p>",
+    variables: ["{{firstName}}", "{{company}}"],
+    created_at: "2024-01-14",
+    last_used: "2024-01-16",
+  },
+]
+
+export default function EmailTemplatesPage() {
+  const [templates, setTemplates] = useState<EmailTemplate[]>(mockTemplates)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null)
+
+  const handleSaveTemplate = (template: Omit<EmailTemplate, 'id' | 'created_at'>) => {
+    if (editingTemplate) {
+      // Update existing
+      setTemplates(prev => prev.map(t =>
+        t.id === editingTemplate.id
+          ? { ...t, ...template, last_used: new Date().toISOString().split('T')[0] }
+          : t
+      ))
+      setEditingTemplate(null)
+    } else {
+      // Create new
+      const newTemplate: EmailTemplate = {
+        ...template,
+        id: Date.now().toString(),
+        created_at: new Date().toISOString().split('T')[0],
+      }
+      setTemplates(prev => [...prev, newTemplate])
+    }
+    setCreateDialogOpen(false)
+  }
+
+  const handleEditTemplate = (template: EmailTemplate) => {
+    setEditingTemplate(template)
+    setCreateDialogOpen(true)
+  }
+
+  const handleDeleteTemplate = (id: string) => {
+    setTemplates(prev => prev.filter(t => t.id !== id))
+    toast.success("Template deleted successfully")
+  }
+
+  const handleDuplicateTemplate = (template: EmailTemplate) => {
+    const duplicated: EmailTemplate = {
+      ...template,
+      id: Date.now().toString(),
+      name: `${template.name} (Copy)`,
+      created_at: new Date().toISOString().split('T')[0],
+      last_used: undefined,
+    }
+    setTemplates(prev => [...prev, duplicated])
+    toast.success("Template duplicated successfully")
+  }
+
+  const handleCloseDialog = () => {
+    setCreateDialogOpen(false)
+    setEditingTemplate(null)
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Email Templates</h1>
+          <p className="text-muted-foreground">
+            Create and manage personalized email templates for your outreach campaigns
+          </p>
+        </div>
+        <Dialog open={createDialogOpen} onOpenChange={handleCloseDialog}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Template
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {editingTemplate ? 'Edit Template' : 'Create New Template'}
+              </DialogTitle>
+              <DialogDescription>
+                Design personalized email templates with dynamic variables
+              </DialogDescription>
+            </DialogHeader>
+            <EmailTemplateBuilder
+              onSave={handleSaveTemplate}
+              onSend={(template) => {
+                console.log('Send test email:', template)
+                toast.success("Test email sent!")
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Stats */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Templates</CardTitle>
+            <Mail className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{templates.length}</div>
+            <p className="text-xs text-muted-foreground">
+              Active email templates
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Recently Used</CardTitle>
+            <Eye className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {templates.filter(t => t.last_used).length}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Templates used this week
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Avg Variables</CardTitle>
+            <Copy className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {Math.round(templates.reduce((acc, t) => acc + t.variables.length, 0) / templates.length)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Variables per template
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Templates List */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Templates</CardTitle>
+          <CardDescription>
+            Manage your email template library
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {templates.map((template) => (
+              <div
+                key={template.id}
+                className="flex items-start gap-4 rounded-lg border p-4 hover:bg-muted/50"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                  <Mail className="h-4 w-4" />
+                </div>
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-medium">{template.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEditTemplate(template)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDuplicateTemplate(template)}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteTemplate(template.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Subject: {template.subject}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <div className="flex gap-1">
+                      {template.variables.map((variable) => (
+                        <Badge key={variable} variant="secondary" className="text-xs">
+                          {variable}
+                        </Badge>
+                      ))}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      Created {template.created_at}
+                      {template.last_used && ` • Last used ${template.last_used}`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {templates.length === 0 && (
+              <div className="text-center py-8">
+                <Mail className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-medium mb-2">No templates yet</h3>
+                <p className="text-muted-foreground mb-4">
+                  Create your first email template to get started with personalized outreach.
+                </p>
+                <Button onClick={() => setCreateDialogOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Template
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}

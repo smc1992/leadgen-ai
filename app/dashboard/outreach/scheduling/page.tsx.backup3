@@ -1,0 +1,706 @@
+"use client"
+
+import { useState } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Calendar } from "@/components/ui/calendar"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Progress } from "@/components/ui/progress"
+import {
+  Calendar as CalendarIcon,
+  Clock,
+  Send,
+  Pause,
+  Play,
+  Plus,
+  Settings,
+  CheckCircle,
+  AlertTriangle,
+  Mail,
+  Users,
+  Zap,
+} from "lucide-react"
+import { format } from "date-fns"
+
+interface ScheduledSend {
+  id: string
+  campaign_name: string
+  template_id: string
+  recipient_count: number
+  scheduled_at: Date
+  status: 'scheduled' | 'sending' | 'completed' | 'paused' | 'failed'
+  progress: number
+  timezone: string
+  segment: string
+}
+
+interface SendQueue {
+  id: string
+  email: string
+  priority: 'high' | 'medium' | 'low'
+  scheduled_at: Date
+  status: 'queued' | 'sending' | 'sent' | 'failed'
+  campaign_id: string
+}
+
+// Mock scheduled sends
+const mockScheduledSends: ScheduledSend[] = [
+  {
+    id: "1",
+    campaign_name: "Weekly Newsletter",
+    template_id: "newsletter-1",
+    recipient_count: 1250,
+    scheduled_at: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours from now
+    status: 'scheduled',
+    progress: 0,
+    timezone: 'Europe/Berlin',
+    segment: 'all'
+  },
+  {
+    id: "2",
+    campaign_name: "Lead Nurture Sequence",
+    template_id: "nurture-1",
+    recipient_count: 450,
+    scheduled_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // Tomorrow
+    status: 'scheduled',
+    progress: 0,
+    timezone: 'America/New_York',
+    segment: 'enterprise'
+  },
+  {
+    id: "3",
+    campaign_name: "Product Update",
+    template_id: "update-1",
+    recipient_count: 890,
+    scheduled_at: new Date(Date.now() - 30 * 60 * 1000), // 30 minutes ago
+    status: 'completed',
+    progress: 100,
+    timezone: 'Europe/London',
+    segment: 'active_users'
+  }
+]
+
+// Mock send queue
+const mockSendQueue: SendQueue[] = [
+  {
+    id: "1",
+    email: "john.doe@company.com",
+    priority: 'high',
+    scheduled_at: new Date(Date.now() + 5 * 60 * 1000),
+    status: 'queued',
+    campaign_id: "1"
+  },
+  {
+    id: "2",
+    email: "jane.smith@corp.com",
+    priority: 'medium',
+    scheduled_at: new Date(Date.now() + 10 * 60 * 1000),
+    status: 'queued',
+    campaign_id: "1"
+  },
+  {
+    id: "3",
+    email: "mike.johnson@enterprise.com",
+    priority: 'high',
+    scheduled_at: new Date(Date.now() + 15 * 60 * 1000),
+    status: 'sending',
+    campaign_id: "2"
+  }
+]
+
+export default function SendSchedulingPage() {
+  const [scheduledSends, setScheduledSends] = useState<ScheduledSend[]>(mockScheduledSends)
+  const [sendQueue, setSendQueue] = useState<SendQueue[]>(mockSendQueue)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date())
+  const [selectedTime, setSelectedTime] = useState("09:00")
+
+  const handleCreateScheduledSend = () => {
+    const scheduledDateTime = new Date(selectedDate!)
+    const [hours, minutes] = selectedTime.split(':')
+    scheduledDateTime.setHours(parseInt(hours), parseInt(minutes))
+
+    const newSend: ScheduledSend = {
+      id: Date.now().toString(),
+      campaign_name: "New Campaign",
+      template_id: "template-1",
+      recipient_count: 0,
+      scheduled_at: scheduledDateTime,
+      status: 'scheduled',
+      progress: 0,
+      timezone: 'Europe/Berlin',
+      segment: 'all'
+    }
+
+    setScheduledSends(prev => [...prev, newSend])
+    setCreateDialogOpen(false)
+  }
+
+  const handleToggleSend = (id: string) => {
+    setScheduledSends(prev => prev.map(send =>
+      send.id === id
+        ? { ...send, status: send.status === 'scheduled' ? 'paused' : 'scheduled' }
+        : send
+    ))
+  }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'scheduled':
+        return <Badge className="bg-blue-600">Scheduled</Badge>
+      case 'sending':
+        return <Badge className="bg-yellow-600">Sending</Badge>
+      case 'completed':
+        return <Badge className="bg-green-600">Completed</Badge>
+      case 'paused':
+        return <Badge variant="outline">Paused</Badge>
+      case 'failed':
+        return <Badge variant="destructive">Failed</Badge>
+      default:
+        return <Badge variant="outline">Unknown</Badge>
+    }
+  }
+
+  const getQueueStatusBadge = (status: string) => {
+    switch (status) {
+      case 'queued':
+        return <Badge variant="outline">Queued</Badge>
+      case 'sending':
+        return <Badge className="bg-yellow-600">Sending</Badge>
+      case 'sent':
+        return <Badge className="bg-green-600">Sent</Badge>
+      case 'failed':
+        return <Badge variant="destructive">Failed</Badge>
+      default:
+        return <Badge variant="outline">Unknown</Badge>
+    }
+  }
+
+  const getPriorityBadge = (priority: string) => {
+    switch (priority) {
+      case 'high':
+        return <Badge variant="destructive">High</Badge>
+      case 'medium':
+        return <Badge className="bg-yellow-600">Medium</Badge>
+      case 'low':
+        return <Badge variant="outline">Low</Badge>
+      default:
+        return <Badge variant="outline">Unknown</Badge>
+    }
+  }
+
+  // Group scheduled sends by date
+  const groupedSends = scheduledSends.reduce((acc, send) => {
+    const dateKey = format(send.scheduled_at, 'yyyy-MM-dd')
+    if (!acc[dateKey]) {
+      acc[dateKey] = []
+    }
+    acc[dateKey].push(send)
+    return acc
+  }, {} as Record<string, ScheduledSend[]>)
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Send Scheduling</h1>
+          <p className="text-muted-foreground">
+            Schedule email campaigns and manage send queues
+          </p>
+        </div>
+        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Schedule Send
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Schedule New Email Send</DialogTitle>
+              <DialogDescription>
+                Set up a scheduled email campaign
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div>
+                <Label>Campaign Name</Label>
+                <Input placeholder="e.g., Weekly Newsletter" />
+              </div>
+              <div>
+                <Label>Template</Label>
+                <Select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newsletter-1">Weekly Newsletter</SelectItem>
+                    <SelectItem value="nurture-1">Lead Nurture</SelectItem>
+                    <SelectItem value="product-1">Product Update</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Send Date</Label>
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={setSelectedDate}
+                    className="rounded-md border"
+                  />
+                </div>
+                <div>
+                  <Label>Send Time</Label>
+                  <Input
+                    type="time"
+                    value={selectedTime}
+                    onChange={(e) => setSelectedTime(e.target.value)}
+                  />
+                  <Label className="text-sm text-muted-foreground mt-2">
+                    Timezone: Europe/Berlin
+                  </Label>
+                </div>
+              </div>
+              <div>
+                <Label>Target Segment</Label>
+                <Select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select segment" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Contacts</SelectItem>
+                    <SelectItem value="active">Active Leads</SelectItem>
+                    <SelectItem value="enterprise">Enterprise</SelectItem>
+                    <SelectItem value="smb">SMB</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleCreateScheduledSend}>
+                Schedule Send
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Stats Overview */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Scheduled Today</CardTitle>
+            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {scheduledSends.filter(s => s.status === 'scheduled').length}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Campaigns ready to send
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">In Queue</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {sendQueue.filter(q => q.status === 'queued').length}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Emails waiting to send
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Sending Now</CardTitle>
+            <Send className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-yellow-600">
+              {sendQueue.filter(q => q.status === 'sending').length}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Currently being sent
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Completed Today</CardTitle>
+            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">
+              {scheduledSends.filter(s => s.status === 'completed').length}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Finished campaigns
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Tabs defaultValue="calendar" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="calendar">Calendar View</TabsTrigger>
+          <TabsTrigger value="queue">Send Queue</TabsTrigger>
+          <TabsTrigger value="automation">Auto-Scheduling</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="calendar" className="space-y-6">
+          <div className="grid gap-6 md:grid-cols-3">
+            {/* Calendar */}
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle>Send Calendar</CardTitle>
+                <CardDescription>
+                  Overview of scheduled email campaigns
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Calendar
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={setSelectedDate}
+                  className="rounded-md border"
+                />
+              </CardContent>
+            </Card>
+
+            {/* Daily Schedule */}
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  {selectedDate ? format(selectedDate, 'MMM dd, yyyy') : 'Select Date'}
+                </CardTitle>
+                <CardDescription>Scheduled sends for this day</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {selectedDate && groupedSends[format(selectedDate, 'yyyy-MM-dd')]?.map((send) => (
+                    <div key={send.id} className="flex items-center gap-3 p-3 border rounded-lg">
+                      <div className="flex-shrink-0">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{send.campaign_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {format(send.scheduled_at, 'HH:mm')} • {send.recipient_count} recipients
+                        </p>
+                      </div>
+                      <div className="flex-shrink-0">
+                        {getStatusBadge(send.status)}
+                      </div>
+                    </div>
+                  )) || (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No sends scheduled for this date
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Scheduled Sends Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>All Scheduled Sends</CardTitle>
+              <CardDescription>
+                Complete list of scheduled email campaigns
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Campaign</TableHead>
+                    <TableHead>Recipients</TableHead>
+                    <TableHead>Scheduled</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Progress</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {scheduledSends.map((send) => (
+                    <TableRow key={send.id}>
+                      <TableCell className="font-medium">{send.campaign_name}</TableCell>
+                      <TableCell>{send.recipient_count.toLocaleString()}</TableCell>
+                      <TableCell>
+                        {format(send.scheduled_at, 'MMM dd, HH:mm')}
+                        <br />
+                        <span className="text-xs text-muted-foreground">{send.timezone}</span>
+                      </TableCell>
+                      <TableCell>{getStatusBadge(send.status)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Progress value={send.progress} className="w-16" />
+                          <span className="text-xs">{send.progress}%</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleToggleSend(send.id)}
+                        >
+                          {send.status === 'scheduled' ? (
+                            <Pause className="h-4 w-4" />
+                          ) : (
+                            <Play className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="queue" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Send Queue</CardTitle>
+              <CardDescription>
+                Real-time view of emails in the sending queue
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead>Campaign</TableHead>
+                    <TableHead>Scheduled</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sendQueue.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-mono text-sm">{item.email}</TableCell>
+                      <TableCell>{getPriorityBadge(item.priority)}</TableCell>
+                      <TableCell>{item.campaign_id}</TableCell>
+                      <TableCell>{format(item.scheduled_at, 'HH:mm:ss')}</TableCell>
+                      <TableCell>{getQueueStatusBadge(item.status)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Queue Stats */}
+          <div className="grid gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Queue Size</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{sendQueue.length}</div>
+                <p className="text-xs text-muted-foreground">Total in queue</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">High Priority</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">
+                  {sendQueue.filter(q => q.priority === 'high').length}
+                </div>
+                <p className="text-xs text-muted-foreground">Urgent sends</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Send Rate</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">45/min</div>
+                <p className="text-xs text-muted-foreground">Current rate</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Est. Completion</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">12 min</div>
+                <p className="text-xs text-muted-foreground">Time remaining</p>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="automation" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Automated Scheduling</CardTitle>
+              <CardDescription>
+                Configure automatic send scheduling based on optimal times
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className="space-y-4">
+                  <div>
+                    <Label>Newsletter Schedule</Label>
+                    <Select defaultValue="weekly">
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="daily">Daily</SelectItem>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="biweekly">Bi-weekly</SelectItem>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Preferred Day</Label>
+                    <Select defaultValue="wednesday">
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="monday">Monday</SelectItem>
+                        <SelectItem value="tuesday">Tuesday</SelectItem>
+                        <SelectItem value="wednesday">Wednesday</SelectItem>
+                        <SelectItem value="thursday">Thursday</SelectItem>
+                        <SelectItem value="friday">Friday</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Preferred Time</Label>
+                    <Select defaultValue="10:00">
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="09:00">9:00 AM</SelectItem>
+                        <SelectItem value="10:00">10:00 AM</SelectItem>
+                        <SelectItem value="11:00">11:00 AM</SelectItem>
+                        <SelectItem value="14:00">2:00 PM</SelectItem>
+                        <SelectItem value="15:00">3:00 PM</SelectItem>
+                        <SelectItem value="16:00">4:00 PM</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <Label>Auto-Schedule Nurture Emails</Label>
+                    <Select defaultValue="enabled">
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="enabled">Enabled</SelectItem>
+                        <SelectItem value="disabled">Disabled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Timezone Handling</Label>
+                    <Select defaultValue="recipient">
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="recipient">Recipient Timezone</SelectItem>
+                        <SelectItem value="sender">Sender Timezone</SelectItem>
+                        <SelectItem value="utc">UTC</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Rate Limiting</Label>
+                    <Select defaultValue="adaptive">
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="adaptive">Adaptive</SelectItem>
+                        <SelectItem value="fixed">Fixed Rate</SelectItem>
+                        <SelectItem value="unlimited">Unlimited</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button>Save Auto-Schedule Settings</Button>
+                <Button variant="outline">Test Schedule</Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Smart Scheduling Insights</CardTitle>
+              <CardDescription>
+                AI-powered recommendations for optimal send timing
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-start gap-3 p-4 border rounded-lg">
+                  <Zap className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Peak Engagement Time</p>
+                    <p className="text-sm text-muted-foreground">
+                      Based on your audience data, Wednesday at 10:00 AM shows 23% higher engagement.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-4 border rounded-lg">
+                  <Clock className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Timezone Optimization</p>
+                    <p className="text-sm text-muted-foreground">
+                      Schedule sends 2 hours after local business opening for maximum response rates.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-4 border rounded-lg">
+                  <TrendingUp className="h-5 w-5 text-orange-600 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Volume Optimization</p>
+                    <p className="text-sm text-muted-foreground">
+                      Send 45-60 emails per minute to maintain deliverability while respecting rate limits.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}

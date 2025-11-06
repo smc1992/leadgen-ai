@@ -1,0 +1,31 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getEmailService } from '@/lib/email'
+
+export async function POST(request: NextRequest) {
+  try {
+    const { domain } = await request.json()
+
+    if (!domain) {
+      return NextResponse.json(
+        { error: 'Domain is required' },
+        { status: 400 }
+      )
+    }
+
+    const emailService = getEmailService()
+    const result = await emailService.validateSPF(domain)
+
+    return NextResponse.json({
+      valid: result.valid,
+      records: result.records,
+      domain
+    })
+
+  } catch (error) {
+    console.error('SPF validation failed:', error)
+    return NextResponse.json(
+      { error: 'SPF validation failed' },
+      { status: 500 }
+    )
+  }
+}

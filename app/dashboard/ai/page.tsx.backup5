@@ -1,0 +1,703 @@
+"use client"
+
+import { useState } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Progress } from "@/components/ui/progress"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  Brain,
+  Sparkles,
+  Mail,
+  FileText,
+  TrendingUp,
+  Target,
+  Zap,
+  Settings,
+  Play,
+  Loader2,
+  CheckCircle,
+  AlertTriangle,
+  Lightbulb,
+  BarChart3,
+} from "lucide-react"
+import { getAIService, type LeadData, type ContentRequest } from "@/lib/ai-service"
+import { toast } from "sonner"
+
+// Mock lead data for testing
+const mockLeads: LeadData[] = [
+  {
+    id: "1",
+    full_name: "John Smith",
+    job_title: "Supply Chain Director",
+    company: "Global Logistics Inc",
+    email: "john.smith@globallogistics.com",
+    region: "USA",
+    channel: "linkedin",
+    industry: "Logistics"
+  },
+  {
+    id: "2",
+    full_name: "Sarah Johnson",
+    job_title: "Operations Manager",
+    company: "FastShip GmbH",
+    email: "s.johnson@fastship.de",
+    region: "Germany",
+    channel: "maps",
+    industry: "Transportation"
+  }
+]
+
+export default function AIDashboardPage() {
+  const [activeTab, setActiveTab] = useState("scoring")
+  const [apiKey, setApiKey] = useState("")
+  const [isConfigured, setIsConfigured] = useState(false)
+
+  // Lead Scoring State
+  const [selectedLead, setSelectedLead] = useState<LeadData | null>(null)
+  const [scoringResult, setScoringResult] = useState<any>(null)
+  const [isScoring, setIsScoring] = useState(false)
+
+  // Email Personalization State
+  const [personalizationLead, setPersonalizationLead] = useState<LeadData | null>(null)
+  const [emailTemplate, setEmailTemplate] = useState({
+    subject: "Streamlining {{company}}'s Supply Chain Operations",
+    content: "Hi {{firstName}},\n\nI noticed you're the {{jobTitle}} at {{company}}. I'd love to discuss how we can help optimize your supply chain operations.\n\nBest regards,\nAI Assistant"
+  })
+  const [personalizedEmail, setPersonalizedEmail] = useState<any>(null)
+  const [isPersonalizing, setIsPersonalizing] = useState(false)
+
+  // Content Generation State
+  const [contentRequest, setContentRequest] = useState<ContentRequest>({
+    topic: "",
+    platform: "linkedin",
+    tone: "professional",
+    length: "medium"
+  })
+  const [generatedContent, setGeneratedContent] = useState("")
+  const [isGenerating, setIsGenerating] = useState(false)
+
+  // Campaign Prediction State
+  const [campaignData, setCampaignData] = useState({
+    subject: "",
+    content_preview: "",
+    target_audience: "B2B professionals in logistics"
+  })
+  const [predictionResult, setPredictionResult] = useState<any>(null)
+  const [isPredicting, setIsPredicting] = useState(false)
+
+  const aiService = getAIService()
+
+  const handleConfigureAI = () => {
+    if (!apiKey.trim()) {
+      toast.error("Please enter an OpenAI API key")
+      return
+    }
+
+    try {
+      aiService.setApiKey(apiKey)
+      setIsConfigured(true)
+      toast.success("AI service configured successfully!")
+    } catch (error) {
+      toast.error("Failed to configure AI service")
+    }
+  }
+
+  const handleScoreLead = async () => {
+    if (!selectedLead) {
+      toast.error("Please select a lead to score")
+      return
+    }
+
+    setIsScoring(true)
+    try {
+      const result = await aiService.scoreLead(selectedLead)
+      setScoringResult(result)
+      toast.success("Lead scored successfully!")
+    } catch (error) {
+      toast.error("Failed to score lead")
+    } finally {
+      setIsScoring(false)
+    }
+  }
+
+  const handlePersonalizeEmail = async () => {
+    if (!personalizationLead) {
+      toast.error("Please select a lead")
+      return
+    }
+
+    setIsPersonalizing(true)
+    try {
+      const result = await aiService.generatePersonalizedEmail(
+        personalizationLead,
+        emailTemplate,
+        "professional"
+      )
+      setPersonalizedEmail(result)
+      toast.success("Email personalized successfully!")
+    } catch (error) {
+      toast.error("Failed to personalize email")
+    } finally {
+      setIsPersonalizing(false)
+    }
+  }
+
+  const handleGenerateContent = async () => {
+    if (!contentRequest.topic.trim()) {
+      toast.error("Please enter a topic")
+      return
+    }
+
+    setIsGenerating(true)
+    try {
+      const content = await aiService.generateContent(contentRequest)
+      setGeneratedContent(content)
+      toast.success("Content generated successfully!")
+    } catch (error) {
+      toast.error("Failed to generate content")
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  const handlePredictCampaign = async () => {
+    if (!campaignData.subject.trim() || !campaignData.content_preview.trim()) {
+      toast.error("Please fill in campaign details")
+      return
+    }
+
+    setIsPredicting(true)
+    try {
+      const result = await aiService.predictCampaignPerformance(campaignData)
+      setPredictionResult(result)
+      toast.success("Campaign performance predicted!")
+    } catch (error) {
+      toast.error("Failed to predict campaign performance")
+    } finally {
+      setIsPredicting(false)
+    }
+  }
+
+  if (!isConfigured) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">AI Dashboard</h1>
+          <p className="text-muted-foreground">
+            Configure AI services to unlock intelligent features
+          </p>
+        </div>
+
+        <Card className="max-w-md mx-auto">
+          <CardHeader className="text-center">
+            <Brain className="h-12 w-12 text-blue-600 mx-auto mb-4" />
+            <CardTitle>Configure AI Service</CardTitle>
+            <CardDescription>
+              Enter your OpenAI API key to enable AI-powered features
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label htmlFor="api-key">OpenAI API Key</Label>
+              <Input
+                id="api-key"
+                type="password"
+                placeholder="sk-..."
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Your API key is stored locally and never sent to our servers
+              </p>
+            </div>
+            <Button onClick={handleConfigureAI} className="w-full">
+              <Sparkles className="h-4 w-4 mr-2" />
+              Configure AI Service
+            </Button>
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Note:</strong> AI features work without an API key using fallback algorithms,
+                but you'll get better results with OpenAI integration.
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">AI Dashboard</h1>
+          <p className="text-muted-foreground">
+            Leverage AI for smarter lead scoring, content creation, and campaign optimization
+          </p>
+        </div>
+        <Badge variant="outline" className="text-green-600">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          AI Service Active
+        </Badge>
+      </div>
+
+      {/* Stats Overview */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">AI Lead Scores</CardTitle>
+            <Target className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">247</div>
+            <p className="text-xs text-muted-foreground">
+              Leads analyzed this month
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Content Generated</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">89</div>
+            <p className="text-xs text-muted-foreground">
+              AI-generated posts this month
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Emails Personalized</CardTitle>
+            <Mail className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">156</div>
+            <p className="text-xs text-muted-foreground">
+              AI-personalized emails sent
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Performance Boost</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">+34%</div>
+            <p className="text-xs text-muted-foreground">
+              Avg. improvement with AI
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="scoring">Lead Scoring</TabsTrigger>
+          <TabsTrigger value="email">Email Personalization</TabsTrigger>
+          <TabsTrigger value="content">Content Generation</TabsTrigger>
+          <TabsTrigger value="campaign">Campaign Prediction</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="scoring" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>AI Lead Scoring</CardTitle>
+              <CardDescription>
+                Get intelligent lead quality scores and actionable recommendations
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Select Lead to Score</Label>
+                <Select onValueChange={(value) => {
+                  const lead = mockLeads.find(l => l.id === value)
+                  setSelectedLead(lead || null)
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a lead..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mockLeads.map(lead => (
+                      <SelectItem key={lead.id} value={lead.id}>
+                        {lead.full_name} - {lead.company}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {selectedLead && (
+                <Card className="bg-muted/50">
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div><strong>Name:</strong> {selectedLead.full_name}</div>
+                      <div><strong>Company:</strong> {selectedLead.company}</div>
+                      <div><strong>Job Title:</strong> {selectedLead.job_title}</div>
+                      <div><strong>Industry:</strong> {selectedLead.industry}</div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <Button onClick={handleScoreLead} disabled={!selectedLead || isScoring}>
+                {isScoring && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                <Brain className="h-4 w-4 mr-2" />
+                Score Lead with AI
+              </Button>
+            </CardContent>
+          </Card>
+
+          {scoringResult && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  AI Scoring Result
+                  <Badge variant={scoringResult.score > 75 ? "default" : scoringResult.score > 50 ? "secondary" : "destructive"}>
+                    Score: {scoringResult.score}/100
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Confidence Level</Label>
+                    <Progress value={scoringResult.confidence * 100} className="mt-2" />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {(scoringResult.confidence * 100).toFixed(1)}% confidence
+                    </p>
+                  </div>
+                  <div>
+                    <Label>Lead Quality</Label>
+                    <div className="mt-2">
+                      {scoringResult.score >= 80 && <Badge className="bg-green-600">Excellent</Badge>}
+                      {scoringResult.score >= 60 && scoringResult.score < 80 && <Badge className="bg-blue-600">Good</Badge>}
+                      {scoringResult.score >= 40 && scoringResult.score < 60 && <Badge className="bg-yellow-600">Fair</Badge>}
+                      {scoringResult.score < 40 && <Badge variant="destructive">Poor</Badge>}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <Label>Scoring Factors</Label>
+                  <div className="grid grid-cols-2 gap-4 mt-2">
+                    {Object.entries(scoringResult.factors).map(([factor, weight]: [string, any]) => (
+                      <div key={factor} className="flex justify-between">
+                        <span className="text-sm capitalize">{factor.replace('_', ' ')}:</span>
+                        <span className="text-sm font-medium">{(weight * 100).toFixed(0)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <Label>AI Recommendations</Label>
+                  <ul className="mt-2 space-y-1">
+                    {scoringResult.recommendations.map((rec: string, i: number) => (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <Lightbulb className="h-3 w-3 text-yellow-600 mt-0.5 flex-shrink-0" />
+                        {rec}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="email" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>AI Email Personalization</CardTitle>
+              <CardDescription>
+                Generate highly personalized emails tailored to individual leads
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Select Lead</Label>
+                <Select onValueChange={(value) => {
+                  const lead = mockLeads.find(l => l.id === value)
+                  setPersonalizationLead(lead || null)
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a lead..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mockLeads.map(lead => (
+                      <SelectItem key={lead.id} value={lead.id}>
+                        {lead.full_name} - {lead.company}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Email Subject Template</Label>
+                  <Input
+                    placeholder="Subject with {{variables}}"
+                    value={emailTemplate.subject}
+                    onChange={(e) => setEmailTemplate(prev => ({ ...prev, subject: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label>Email Content Template</Label>
+                  <Textarea
+                    placeholder="Content with {{variables}}"
+                    value={emailTemplate.content}
+                    onChange={(e) => setEmailTemplate(prev => ({ ...prev, content: e.target.value }))}
+                    rows={4}
+                  />
+                </div>
+              </div>
+
+              <Button onClick={handlePersonalizeEmail} disabled={!personalizationLead || isPersonalizing}>
+                {isPersonalizing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                <Sparkles className="h-4 w-4 mr-2" />
+                Personalize Email
+              </Button>
+            </CardContent>
+          </Card>
+
+          {personalizedEmail && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Personalized Email</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label>Subject</Label>
+                  <div className="mt-1 p-3 bg-muted rounded text-sm">
+                    {personalizedEmail.subject}
+                  </div>
+                </div>
+                <div>
+                  <Label>Content</Label>
+                  <div className="mt-1 p-3 bg-muted rounded text-sm whitespace-pre-wrap">
+                    {personalizedEmail.content}
+                  </div>
+                </div>
+                <Button variant="outline" size="sm">
+                  <Mail className="h-4 w-4 mr-2" />
+                  Send This Email
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="content" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>AI Content Generation</CardTitle>
+              <CardDescription>
+                Generate engaging social media content for different platforms
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Topic</Label>
+                <Input
+                  placeholder="e.g., Supply chain optimization tips"
+                  value={contentRequest.topic}
+                  onChange={(e) => setContentRequest(prev => ({ ...prev, topic: e.target.value }))}
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label>Platform</Label>
+                  <Select
+                    value={contentRequest.platform}
+                    onValueChange={(value: any) => setContentRequest(prev => ({ ...prev, platform: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="linkedin">LinkedIn</SelectItem>
+                      <SelectItem value="twitter">Twitter</SelectItem>
+                      <SelectItem value="facebook">Facebook</SelectItem>
+                      <SelectItem value="instagram">Instagram</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Tone</Label>
+                  <Select
+                    value={contentRequest.tone}
+                    onValueChange={(value: any) => setContentRequest(prev => ({ ...prev, tone: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="professional">Professional</SelectItem>
+                      <SelectItem value="casual">Casual</SelectItem>
+                      <SelectItem value="formal">Formal</SelectItem>
+                      <SelectItem value="friendly">Friendly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Length</Label>
+                  <Select
+                    value={contentRequest.length}
+                    onValueChange={(value: any) => setContentRequest(prev => ({ ...prev, length: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="short">Short</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="long">Long</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <Button onClick={handleGenerateContent} disabled={!contentRequest.topic || isGenerating}>
+                {isGenerating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                <Sparkles className="h-4 w-4 mr-2" />
+                Generate Content
+              </Button>
+            </CardContent>
+          </Card>
+
+          {generatedContent && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Generated Content</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="p-4 bg-muted rounded whitespace-pre-wrap text-sm">
+                  {generatedContent}
+                </div>
+                <div className="flex gap-2 mt-4">
+                  <Button variant="outline" size="sm">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Copy to Clipboard
+                  </Button>
+                  <Button variant="outline" size="sm">
+                    Edit Content
+                  </Button>
+                  <Button size="sm">
+                    Post Now
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="campaign" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Campaign Performance Prediction</CardTitle>
+              <CardDescription>
+                Get AI-powered predictions for your email campaign performance
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Campaign Subject</Label>
+                <Input
+                  placeholder="Email subject line"
+                  value={campaignData.subject}
+                  onChange={(e) => setCampaignData(prev => ({ ...prev, subject: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <Label>Content Preview</Label>
+                <Textarea
+                  placeholder="First 200 characters of your email content..."
+                  value={campaignData.content_preview}
+                  onChange={(e) => setCampaignData(prev => ({ ...prev, content_preview: e.target.value }))}
+                  rows={3}
+                />
+              </div>
+
+              <div>
+                <Label>Target Audience</Label>
+                <Input
+                  placeholder="e.g., B2B professionals in logistics"
+                  value={campaignData.target_audience}
+                  onChange={(e) => setCampaignData(prev => ({ ...prev, target_audience: e.target.value }))}
+                />
+              </div>
+
+              <Button onClick={handlePredictCampaign} disabled={!campaignData.subject || isPredicting}>
+                {isPredicting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                <BarChart3 className="h-4 w-4 mr-2" />
+                Predict Performance
+              </Button>
+            </CardContent>
+          </Card>
+
+          {predictionResult && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Performance Prediction</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center p-4 border rounded">
+                    <div className="text-2xl font-bold text-blue-600">
+                      {predictionResult.predicted_open_rate.toFixed(1)}%
+                    </div>
+                    <div className="text-sm text-muted-foreground">Predicted Open Rate</div>
+                  </div>
+                  <div className="text-center p-4 border rounded">
+                    <div className="text-2xl font-bold text-green-600">
+                      {predictionResult.predicted_click_rate.toFixed(1)}%
+                    </div>
+                    <div className="text-sm text-muted-foreground">Predicted Click Rate</div>
+                  </div>
+                  <div className="text-center p-4 border rounded">
+                    <div className="text-2xl font-bold text-orange-600">
+                      {predictionResult.predicted_conversion_rate.toFixed(1)}%
+                    </div>
+                    <div className="text-sm text-muted-foreground">Predicted Conversion</div>
+                  </div>
+                </div>
+
+                <div>
+                  <Label>AI Recommendations</Label>
+                  <div className="mt-2 space-y-2">
+                    {predictionResult.recommendations.map((rec: string, i: number) => (
+                      <div key={i} className="flex items-start gap-2 p-3 bg-muted/50 rounded">
+                        <Lightbulb className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                        <span className="text-sm">{rec}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <AlertTriangle className="h-4 w-4" />
+                  Prediction confidence: {(predictionResult.confidence * 100).toFixed(1)}%
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}

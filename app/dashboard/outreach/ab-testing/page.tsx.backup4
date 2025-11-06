@@ -1,0 +1,633 @@
+"use client"
+
+import { useState } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Progress } from "@/components/ui/progress"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  Plus,
+  Play,
+  Pause,
+  BarChart3,
+  TrendingUp,
+  Target,
+  Mail,
+  Eye,
+  MousePointer,
+  Trophy,
+  Clock,
+  Users,
+  CheckCircle,
+  AlertTriangle,
+} from "lucide-react"
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
+import { toast } from "sonner"
+
+interface ABTest {
+  id: string
+  name: string
+  type: 'subject' | 'content' | 'send_time'
+  status: 'draft' | 'running' | 'completed' | 'paused'
+  variants: ABVariant[]
+  winner?: string
+  test_size: number
+  confidence_level: number
+  created_at: string
+  started_at?: string
+  completed_at?: string
+}
+
+interface ABVariant {
+  id: string
+  name: string
+  subject?: string
+  content?: string
+  send_time?: string
+  sent: number
+  opened: number
+  clicked: number
+  converted: number
+  open_rate: number
+  click_rate: number
+  conversion_rate: number
+}
+
+// Mock A/B tests
+const mockABTests: ABTest[] = [
+  {
+    id: "1",
+    name: "Subject Line Test - Air Freight",
+    type: "subject",
+    status: "running",
+    test_size: 1000,
+    confidence_level: 95,
+    created_at: "2024-01-15",
+    started_at: "2024-01-16",
+    variants: [
+      {
+        id: "A",
+        name: "Variant A",
+        subject: "Optimize Your Air Freight Operations",
+        sent: 500,
+        opened: 185,
+        clicked: 42,
+        converted: 8,
+        open_rate: 37.0,
+        click_rate: 8.4,
+        conversion_rate: 1.6
+      },
+      {
+        id: "B",
+        name: "Variant B",
+        subject: "Cut Air Freight Costs by 25%",
+        sent: 500,
+        opened: 212,
+        clicked: 38,
+        converted: 6,
+        open_rate: 42.4,
+        click_rate: 7.6,
+        conversion_rate: 1.2
+      }
+    ]
+  },
+  {
+    id: "2",
+    name: "Content Test - Supply Chain",
+    type: "content",
+    status: "completed",
+    winner: "A",
+    test_size: 800,
+    confidence_level: 95,
+    created_at: "2024-01-10",
+    started_at: "2024-01-11",
+    completed_at: "2024-01-14",
+    variants: [
+      {
+        id: "A",
+        name: "Variant A",
+        content: "Focus on cost savings",
+        sent: 400,
+        opened: 148,
+        clicked: 35,
+        converted: 12,
+        open_rate: 37.0,
+        click_rate: 8.8,
+        conversion_rate: 3.0
+      },
+      {
+        id: "B",
+        name: "Variant B",
+        content: "Focus on efficiency gains",
+        sent: 400,
+        opened: 132,
+        clicked: 28,
+        converted: 8,
+        open_rate: 33.0,
+        click_rate: 7.0,
+        conversion_rate: 2.0
+      }
+    ]
+  }
+]
+
+export default function ABTestingPage() {
+  const [abTests, setAbTests] = useState<ABTest[]>(mockABTests)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [selectedTest, setSelectedTest] = useState<ABTest | null>(null)
+  const [resultsDialogOpen, setResultsDialogOpen] = useState(false)
+
+  const handleCreateTest = () => {
+    const newTest: ABTest = {
+      id: Date.now().toString(),
+      name: "New A/B Test",
+      type: "subject",
+      status: "draft",
+      variants: [
+        {
+          id: "A",
+          name: "Variant A",
+          sent: 0,
+          opened: 0,
+          clicked: 0,
+          converted: 0,
+          open_rate: 0,
+          click_rate: 0,
+          conversion_rate: 0
+        },
+        {
+          id: "B",
+          name: "Variant B",
+          sent: 0,
+          opened: 0,
+          clicked: 0,
+          converted: 0,
+          open_rate: 0,
+          click_rate: 0,
+          conversion_rate: 0
+        }
+      ],
+      test_size: 1000,
+      confidence_level: 95,
+      created_at: new Date().toISOString().split('T')[0]
+    }
+    setAbTests(prev => [...prev, newTest])
+    setSelectedTest(newTest)
+    setCreateDialogOpen(false)
+  }
+
+  const handleStartTest = (testId: string) => {
+    setAbTests(prev => prev.map(test =>
+      test.id === testId
+        ? { ...test, status: 'running', started_at: new Date().toISOString().split('T')[0] }
+        : test
+    ))
+    toast.success("A/B test started successfully")
+  }
+
+  const handleStopTest = (testId: string) => {
+    setAbTests(prev => prev.map(test =>
+      test.id === testId
+        ? { ...test, status: 'completed', completed_at: new Date().toISOString().split('T')[0] }
+        : test
+    ))
+    toast.success("A/B test completed")
+  }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'running':
+        return <Badge className="bg-green-600">Running</Badge>
+      case 'completed':
+        return <Badge className="bg-blue-600">Completed</Badge>
+      case 'paused':
+        return <Badge className="bg-yellow-600">Paused</Badge>
+      case 'draft':
+        return <Badge variant="outline">Draft</Badge>
+      default:
+        return <Badge variant="outline">Unknown</Badge>
+    }
+  }
+
+  const getTestTypeIcon = (type: string) => {
+    switch (type) {
+      case 'subject':
+        return <Mail className="h-4 w-4" />
+      case 'content':
+        return <Eye className="h-4 w-4" />
+      case 'send_time':
+        return <Clock className="h-4 w-4" />
+      default:
+        return <Target className="h-4 w-4" />
+    }
+  }
+
+  const calculateWinner = (variants: ABVariant[]): string => {
+    // Simple winner calculation based on conversion rate
+    const sorted = [...variants].sort((a, b) => b.conversion_rate - a.conversion_rate)
+    return sorted[0].id
+  }
+
+  const generateChartData = (test: ABTest) => {
+    return test.variants.map(variant => ({
+      name: variant.name,
+      openRate: variant.open_rate,
+      clickRate: variant.click_rate,
+      conversionRate: variant.conversion_rate,
+      opened: variant.opened,
+      clicked: variant.clicked,
+      converted: variant.converted
+    }))
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">A/B Testing</h1>
+          <p className="text-muted-foreground">
+            Test and optimize your email subject lines, content, and send times
+          </p>
+        </div>
+        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New A/B Test
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New A/B Test</DialogTitle>
+              <DialogDescription>
+                Set up an A/B test to optimize your email performance
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div>
+                <Label htmlFor="test-name">Test Name</Label>
+                <Input id="test-name" placeholder="e.g., Subject Line Test" />
+              </div>
+              <div>
+                <Label>Test Type</Label>
+                <Select defaultValue="subject">
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="subject">Subject Line</SelectItem>
+                    <SelectItem value="content">Email Content</SelectItem>
+                    <SelectItem value="send_time">Send Time</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="test-size">Test Size</Label>
+                <Input id="test-size" type="number" placeholder="1000" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleCreateTest}>
+                Create Test
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Stats Overview */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Tests</CardTitle>
+            <Play className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {abTests.filter(t => t.status === 'running').length}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Currently running
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Completed Tests</CardTitle>
+            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {abTests.filter(t => t.status === 'completed').length}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Tests finished
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Avg Improvement</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">+24%</div>
+            <p className="text-xs text-muted-foreground">
+              From A/B tests
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Tested</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {abTests.reduce((acc, test) => acc + test.test_size, 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Recipients tested
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* A/B Tests List */}
+      <Card>
+        <CardHeader>
+          <CardTitle>A/B Tests</CardTitle>
+          <CardDescription>
+            Manage and monitor your A/B testing experiments
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {abTests.map((test) => (
+              <div
+                key={test.id}
+                className="flex items-start gap-4 rounded-lg border p-4 hover:bg-muted/50"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                  {getTestTypeIcon(test.type)}
+                </div>
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium">{test.name}</h3>
+                      {getStatusBadge(test.status)}
+                      {test.winner && (
+                        <Badge variant="outline" className="text-green-600">
+                          <Trophy className="h-3 w-3 mr-1" />
+                          Winner: {test.winner}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {test.status === 'draft' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleStartTest(test.id)}
+                        >
+                          <Play className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {test.status === 'running' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleStopTest(test.id)}
+                        >
+                          <Pause className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedTest(test)
+                          setResultsDialogOpen(true)
+                        }}
+                      >
+                        <BarChart3 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-6 text-xs text-muted-foreground">
+                    <span>Type: {test.type.replace('_', ' ')}</span>
+                    <span>Test Size: {test.test_size.toLocaleString()}</span>
+                    <span>Confidence: {test.confidence_level}%</span>
+                    <span>Created: {test.created_at}</span>
+                  </div>
+
+                  {test.status === 'running' && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Test Progress</span>
+                        <span>
+                          {test.variants.reduce((acc, v) => acc + v.sent, 0)} / {test.test_size} sent
+                        </span>
+                      </div>
+                      <Progress
+                        value={(test.variants.reduce((acc, v) => acc + v.sent, 0) / test.test_size) * 100}
+                      />
+                    </div>
+                  )}
+
+                  {test.variants.length > 0 && (
+                    <div className="grid grid-cols-2 gap-4 mt-3">
+                      {test.variants.map((variant) => (
+                        <div key={variant.id} className="bg-muted/50 rounded p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-medium text-sm">{variant.name}</span>
+                            <Badge variant="outline">{variant.id}</Badge>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            <div>
+                              <div className="text-muted-foreground">Open Rate</div>
+                              <div className="font-medium">{variant.open_rate.toFixed(1)}%</div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground">Click Rate</div>
+                              <div className="font-medium">{variant.click_rate.toFixed(1)}%</div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground">Conversions</div>
+                              <div className="font-medium">{variant.converted}</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {abTests.length === 0 && (
+              <div className="text-center py-8">
+                <Target className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-medium mb-2">No A/B tests yet</h3>
+                <p className="text-muted-foreground mb-4">
+                  Create your first A/B test to optimize email performance.
+                </p>
+                <Button onClick={() => setCreateDialogOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create A/B Test
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Test Results Dialog */}
+      <Dialog open={resultsDialogOpen} onOpenChange={setResultsDialogOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Test Results - {selectedTest?.name}</DialogTitle>
+            <DialogDescription>
+              Detailed analysis of your A/B test performance
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedTest && (
+            <div className="space-y-6">
+              {/* Performance Charts */}
+              <div className="grid gap-6 md:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Open Rates</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={generateChartData(selectedTest)}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip formatter={(value) => [`${value}%`, 'Open Rate']} />
+                        <Bar dataKey="openRate" fill="#10b981" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Click Rates</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={generateChartData(selectedTest)}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip formatter={(value) => [`${value}%`, 'Click Rate']} />
+                        <Bar dataKey="clickRate" fill="#f59e0b" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Detailed Results Table */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Detailed Results</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Variant</TableHead>
+                        <TableHead>Sent</TableHead>
+                        <TableHead>Opened</TableHead>
+                        <TableHead>Open Rate</TableHead>
+                        <TableHead>Clicked</TableHead>
+                        <TableHead>Click Rate</TableHead>
+                        <TableHead>Conversions</TableHead>
+                        <TableHead>Conversion Rate</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedTest.variants.map((variant) => (
+                        <TableRow key={variant.id}>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              {variant.name}
+                              {selectedTest.winner === variant.id && (
+                                <Trophy className="h-4 w-4 text-yellow-600" />
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>{variant.sent}</TableCell>
+                          <TableCell>{variant.opened}</TableCell>
+                          <TableCell>{variant.open_rate.toFixed(1)}%</TableCell>
+                          <TableCell>{variant.clicked}</TableCell>
+                          <TableCell>{variant.click_rate.toFixed(1)}%</TableCell>
+                          <TableCell>{variant.converted}</TableCell>
+                          <TableCell>{variant.conversion_rate.toFixed(1)}%</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+
+              {/* Recommendations */}
+              {selectedTest.status === 'completed' && selectedTest.winner && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Recommendations</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="flex items-start gap-3">
+                        <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                        <div>
+                          <p className="font-medium">Winner Identified</p>
+                          <p className="text-sm text-muted-foreground">
+                            Variant {selectedTest.winner} performed {(() => {
+                              const winner = selectedTest.variants.find(v => v.id === selectedTest.winner)
+                              const loser = selectedTest.variants.find(v => v.id !== selectedTest.winner)
+                              if (winner && loser) {
+                                const improvement = ((winner.conversion_rate - loser.conversion_rate) / loser.conversion_rate * 100).toFixed(1)
+                                return `${improvement}% better`
+                              }
+                              return 'better'
+                            })()} than the alternative.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5" />
+                        <div>
+                          <p className="font-medium">Confidence Level</p>
+                          <p className="text-sm text-muted-foreground">
+                            Results are statistically significant with {selectedTest.confidence_level}% confidence.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

@@ -1,0 +1,456 @@
+"use client"
+
+import { useState } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Switch } from "@/components/ui/switch"
+import {
+  Plus,
+  Play,
+  Pause,
+  Settings,
+  Trash2,
+  ArrowRight,
+  Mail,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  Users,
+  MessageSquare,
+  Zap,
+  Calendar,
+} from "lucide-react"
+import { toast } from "sonner"
+
+interface WorkflowNode {
+  id: string
+  type: 'trigger' | 'condition' | 'action' | 'delay'
+  title: string
+  description: string
+  config: any
+  position: { x: number; y: number }
+}
+
+interface Workflow {
+  id: string
+  name: string
+  description: string
+  status: 'active' | 'paused' | 'draft'
+  nodes: WorkflowNode[]
+  created_at: string
+  last_run?: string
+}
+
+// Mock workflows
+const mockWorkflows: Workflow[] = [
+  {
+    id: "1",
+    name: "Lead Qualification Flow",
+    description: "Automatically qualify and nurture new leads",
+    status: "active",
+    created_at: "2024-01-10",
+    last_run: "2024-01-15 14:30",
+    nodes: [
+      {
+        id: "trigger-1",
+        type: "trigger",
+        title: "New Lead Added",
+        description: "When a new lead is imported",
+        config: {},
+        position: { x: 50, y: 50 }
+      },
+      {
+        id: "condition-1",
+        type: "condition",
+        title: "Score > 75",
+        description: "Check if lead score is high enough",
+        config: { operator: ">", value: 75 },
+        position: { x: 250, y: 50 }
+      },
+      {
+        id: "action-1",
+        type: "action",
+        title: "Send Welcome Email",
+        description: "Send personalized welcome email",
+        config: { template_id: "welcome-1" },
+        position: { x: 450, y: 50 }
+      },
+      {
+        id: "delay-1",
+        type: "delay",
+        title: "Wait 3 days",
+        description: "Wait before next action",
+        config: { days: 3 },
+        position: { x: 650, y: 50 }
+      },
+    ]
+  },
+  {
+    id: "2",
+    name: "Follow-up Sequence",
+    description: "Automated follow-up emails for engaged leads",
+    status: "paused",
+    created_at: "2024-01-12",
+    nodes: []
+  },
+]
+
+export default function WorkflowAutomationPage() {
+  const [workflows, setWorkflows] = useState<Workflow[]>(mockWorkflows)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null)
+  const [builderOpen, setBuilderOpen] = useState(false)
+
+  const handleCreateWorkflow = () => {
+    const newWorkflow: Workflow = {
+      id: Date.now().toString(),
+      name: "New Workflow",
+      description: "Description of the new workflow",
+      status: "draft",
+      nodes: [],
+      created_at: new Date().toISOString().split('T')[0],
+    }
+    setWorkflows(prev => [...prev, newWorkflow])
+    setSelectedWorkflow(newWorkflow)
+    setBuilderOpen(true)
+    setCreateDialogOpen(false)
+  }
+
+  const handleEditWorkflow = (workflow: Workflow) => {
+    setSelectedWorkflow(workflow)
+    setBuilderOpen(true)
+  }
+
+  const handleDeleteWorkflow = (id: string) => {
+    setWorkflows(prev => prev.filter(w => w.id !== id))
+    toast.success("Workflow deleted successfully")
+  }
+
+  const handleToggleWorkflow = (id: string) => {
+    setWorkflows(prev => prev.map(w =>
+      w.id === id
+        ? { ...w, status: w.status === 'active' ? 'paused' : 'active' }
+        : w
+    ))
+    toast.success("Workflow status updated")
+  }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'active':
+        return <Badge className="bg-green-600">Active</Badge>
+      case 'paused':
+        return <Badge className="bg-yellow-600">Paused</Badge>
+      case 'draft':
+        return <Badge variant="outline">Draft</Badge>
+      default:
+        return <Badge variant="outline">Unknown</Badge>
+    }
+  }
+
+  const getNodeIcon = (type: string) => {
+    switch (type) {
+      case 'trigger':
+        return <Zap className="h-4 w-4" />
+      case 'condition':
+        return <AlertCircle className="h-4 w-4" />
+      case 'action':
+        return <CheckCircle className="h-4 w-4" />
+      case 'delay':
+        return <Clock className="h-4 w-4" />
+      default:
+        return <Settings className="h-4 w-4" />
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Workflow Automation</h1>
+          <p className="text-muted-foreground">
+            Create automated sequences and conditional workflows for lead management
+          </p>
+        </div>
+        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Workflow
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New Workflow</DialogTitle>
+              <DialogDescription>
+                Set up an automated workflow for your lead management process.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="workflow-name">Workflow Name</Label>
+                <Input id="workflow-name" placeholder="e.g., Lead Qualification Flow" />
+              </div>
+              <div>
+                <Label htmlFor="workflow-desc">Description</Label>
+                <Textarea id="workflow-desc" placeholder="Describe what this workflow does..." />
+              </div>
+              <div>
+                <Label>Starting Trigger</Label>
+                <Select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose when to start" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="lead_imported">When lead is imported</SelectItem>
+                    <SelectItem value="lead_scored">When lead score changes</SelectItem>
+                    <SelectItem value="email_opened">When email is opened</SelectItem>
+                    <SelectItem value="manual">Manual trigger</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleCreateWorkflow}>
+                Create Workflow
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Stats */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Workflows</CardTitle>
+            <Zap className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{workflows.length}</div>
+            <p className="text-xs text-muted-foreground">
+              Automated processes
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Workflows</CardTitle>
+            <Play className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">
+              {workflows.filter(w => w.status === 'active').length}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Currently running
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Actions</CardTitle>
+            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {workflows.reduce((acc, w) => acc + w.nodes.filter(n => n.type === 'action').length, 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Automated actions
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">94%</div>
+            <p className="text-xs text-muted-foreground">
+              Workflow completion
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Workflows List */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Workflows</CardTitle>
+          <CardDescription>
+            Manage your automated workflows
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {workflows.map((workflow) => (
+              <div
+                key={workflow.id}
+                className="flex items-start gap-4 rounded-lg border p-4 hover:bg-muted/50"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                  <Zap className="h-4 w-4" />
+                </div>
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium">{workflow.name}</h3>
+                      {getStatusBadge(workflow.status)}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleToggleWorkflow(workflow.id)}
+                      >
+                        {workflow.status === 'active' ? (
+                          <Pause className="h-4 w-4" />
+                        ) : (
+                          <Play className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEditWorkflow(workflow)}
+                      >
+                        <Settings className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteWorkflow(workflow.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{workflow.description}</p>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span>{workflow.nodes.length} steps</span>
+                    <span>Created {workflow.created_at}</span>
+                    {workflow.last_run && <span>Last run {workflow.last_run}</span>}
+                  </div>
+                  {workflow.nodes.length > 0 && (
+                    <div className="flex items-center gap-2 mt-2">
+                      {workflow.nodes.slice(0, 5).map((node, index) => (
+                        <div key={node.id} className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 bg-muted rounded px-2 py-1">
+                            {getNodeIcon(node.type)}
+                            <span className="text-xs">{node.title}</span>
+                          </div>
+                          {index < workflow.nodes.length - 1 && (
+                            <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                          )}
+                        </div>
+                      ))}
+                      {workflow.nodes.length > 5 && (
+                        <span className="text-xs text-muted-foreground">
+                          +{workflow.nodes.length - 5} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {workflows.length === 0 && (
+              <div className="text-center py-8">
+                <Zap className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-medium mb-2">No workflows yet</h3>
+                <p className="text-muted-foreground mb-4">
+                  Create your first automated workflow to streamline lead management.
+                </p>
+                <Button onClick={() => setCreateDialogOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Workflow
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Workflow Builder Dialog */}
+      <Dialog open={builderOpen} onOpenChange={setBuilderOpen}>
+        <DialogContent className="max-w-6xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>
+              Workflow Builder - {selectedWorkflow?.name || 'New Workflow'}
+            </DialogTitle>
+            <DialogDescription>
+              Drag and drop to create automated workflows
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-4 h-96">
+            {/* Toolbox */}
+            <div className="w-64 border rounded-lg p-4">
+              <h4 className="font-medium mb-4">Workflow Elements</h4>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-muted">
+                  <Zap className="h-4 w-4 text-yellow-600" />
+                  <span className="text-sm">Trigger</span>
+                </div>
+                <div className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-muted">
+                  <AlertCircle className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm">Condition</span>
+                </div>
+                <div className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-muted">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <span className="text-sm">Action</span>
+                </div>
+                <div className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-muted">
+                  <Clock className="h-4 w-4 text-orange-600" />
+                  <span className="text-sm">Delay</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Canvas */}
+            <div className="flex-1 border rounded-lg bg-muted/20 relative overflow-hidden">
+              <div className="absolute inset-0 p-4">
+                {selectedWorkflow?.nodes.map((node) => (
+                  <div
+                    key={node.id}
+                    className="absolute bg-white border rounded-lg p-3 shadow-sm cursor-move"
+                    style={{ left: node.position.x, top: node.position.y }}
+                  >
+                    <div className="flex items-center gap-2">
+                      {getNodeIcon(node.type)}
+                      <span className="text-sm font-medium">{node.title}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">{node.description}</p>
+                  </div>
+                ))}
+                {(!selectedWorkflow?.nodes || selectedWorkflow.nodes.length === 0) && (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <Zap className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">Drag elements here to build your workflow</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setBuilderOpen(false)}>
+              Save & Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
