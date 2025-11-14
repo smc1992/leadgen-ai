@@ -52,6 +52,11 @@ Bevor du Posts veröffentlichen kannst, musst du deine Social Media Accounts ver
 BLOTATO_API_KEY=your_actual_api_key_here
 ```
 
+### 4. Netlify/Vercel
+
+- Setze `BLOTATO_API_KEY` als Environment Variable im Hosting Dashboard.
+- Nach Änderung neu deployen, damit Serverfunktionen den Key erhalten.
+
 ---
 
 ## 🚀 API Funktionen
@@ -78,6 +83,26 @@ console.log('Post ID:', result.id)
 console.log('Status:', result.status) // 'published'
 ```
 
+#### Zusätzliche Posts (Threads)
+
+```typescript
+await publishPost({
+  post: {
+    accountId: 'acc_13579',
+    content: {
+      text: 'First post in thread',
+      mediaUrls: [],
+      platform: 'twitter',
+      additionalPosts: [
+        { text: 'Second post', mediaUrls: [] },
+        { text: 'Third post', mediaUrls: [] }
+      ]
+    },
+    target: { targetType: 'twitter' }
+  }
+})
+```
+
 ### 2. Post schedulen
 
 ```typescript
@@ -99,6 +124,21 @@ const result = await schedulePost({
 
 console.log('Scheduled for:', result.scheduledTime)
 ```
+
+#### Nächst freien Slot nutzen
+
+```typescript
+await publishPost({
+  post: {
+    accountId: 'acc_67890',
+    content: { text: 'Queued for next free slot', mediaUrls: [], platform: 'facebook' },
+    target: { targetType: 'facebook', pageId: '987654321' }
+  },
+  useNextFreeSlot: true
+})
+```
+
+Hinweis: Jeder Post wird in einer Queue eingeplant. Fehlgeschlagene Posts sind im Dashboard sichtbar: `https://my.blotato.com/failed`.
 
 ### 3. Media hochladen
 
@@ -126,6 +166,22 @@ const result = await publishPost({
   }
 })
 ```
+
+#### Google Drive Links konvertieren
+
+Wenn deine Datei unter `https://drive.google.com/file/d/<ID>/view?...` liegt, nutze für den Upload:
+
+```
+https://drive.google.com/uc?export=download&id=<ID>
+```
+
+Große Dateien (>100MB) können von Google Drive blockiert werden („cannot scan for viruses“). Empfohlen: Dropbox, AWS S3 oder GCP Bucket.
+
+#### Limits & Rate-Limits
+
+- Upload Größe: bis 1GB (ältere Seiten nennen 200MB)
+- Rate-Limit Upload: 10 Requests/Minute
+- Typische Fehler: `429 Too Many Requests`, `422 Validation error`, `500 Server error`
 
 ### 4. Video generieren
 
@@ -170,6 +226,15 @@ if (completed.status === 'completed') {
     }
   })
 }
+```
+
+#### Status abfragen
+
+```typescript
+import { getVideo } from '@/lib/blotato-api'
+
+const status = await getVideo('video_12345')
+// status: { id, status: 'queued' | 'processing' | 'completed' | 'failed', mediaUrl?, thumbnailUrl?, progress? }
 ```
 
 ### 5. Twitter Thread erstellen
@@ -345,6 +410,8 @@ await createVideo({
 })
 ```
 
+Aktueller Stand: Die faceless‑Video API unterstützt derzeit keine eigenen ElevenLabs‑Voices. Voice IDs sind vorgegeben; Custom Voices folgen voraussichtlich später.
+
 ---
 
 ## 📱 Platform-spezifische Features
@@ -499,6 +566,12 @@ scheduledTime: '2025-12-31T23:59:59Z' // ✅ Korrekt
 scheduledTime: '2025-12-31 23:59:59'  // ❌ Falsch
 ```
 
+### Rate Limits
+
+- Posts erstellen: 30 Requests/Minute
+- Media Upload: 10 Requests/Minute
+- Post Lookup: 60 Requests/Minute
+
 ### Account IDs
 Jede verbundene Platform hat eine eigene `accountId`:
 - Format: `acc_xxxxx`
@@ -561,6 +634,9 @@ Error: Too many requests
 **Lösung**: 
 - Requests limitieren
 - Retry mit exponential backoff
+
+#### Delete Video
+Status `204 No Content` bei Erfolg; `500` bei Serverfehlern. Nutze `deleteVideo(id)` und validiere, dass der Client keine Nutzung mehr benötigt.
 
 ---
 

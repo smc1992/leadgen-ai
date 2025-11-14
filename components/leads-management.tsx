@@ -38,6 +38,7 @@ import { toast } from "sonner"
 import { ScrapeGoogleMapsDialog } from "@/components/leads/scrape-google-maps-dialog"
 import { fetchWithCsrf } from '@/lib/client-fetch'
 import { CreateLeadDialog } from '@/components/leads/create-lead-dialog'
+import ScraperHub from '@/components/leads/scraper-hub'
 
 interface Lead {
   id: string
@@ -91,6 +92,8 @@ export function LeadsManagement({ className }: LeadsManagementProps) {
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
   const [csvRows, setCsvRows] = useState<string[][]>([])
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({})
+  const [scoringLoading, setScoringLoading] = useState(false)
+  const [enriching, setEnriching] = useState(false)
 
   useEffect(() => {
     fetchLeadLists()
@@ -198,7 +201,7 @@ export function LeadsManagement({ className }: LeadsManagementProps) {
           const obj: any = {}
           csvHeaders.forEach((h, i) => {
             const target = columnMapping[h]
-            if (target) obj[target] = (r[i] || '').trim()
+            if (target && target !== 'ignore') obj[target] = (r[i] || '').trim()
           })
           return obj
         }).filter(l => (l.full_name || l.fullName))
@@ -260,6 +263,53 @@ export function LeadsManagement({ className }: LeadsManagementProps) {
       toast.success(`Validated ${json.validated} emails`)
     } catch (e) {
       toast.error('Email validation failed')
+    }
+  }
+
+  const llmScoreSelectedLeads = async () => {
+    try {
+      if (selectedLeads.length === 0) return
+      setScoringLoading(true)
+      for (const id of selectedLeads) {
+        const res = await fetchWithCsrf('/api/sales/lead-scoring', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lead_id: id, use_llm: true, force_recalculate: true })
+        })
+        if (!res.ok) continue
+        const json = await res.json()
+        const total = json?.score?.total_score
+        if (typeof total === 'number') {
+          setLeads(prev => prev.map(l => l.id === id ? { ...l, score: total } as any : l))
+        }
+      }
+      toast.success(`LLM scoring applied for ${selectedLeads.length} leads`)
+    } catch (e) {
+      toast.error('LLM scoring failed')
+    } finally {
+      setScoringLoading(false)
+    }
+  }
+
+  const enrichSelectedLeads = async () => {
+    try {
+      if (selectedLeads.length === 0) return
+      setEnriching(true)
+      const res = await fetchWithCsrf('/api/enrichment/firecrawl', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadIds: selectedLeads })
+      })
+      const json = await res.json()
+      if (res.ok) {
+        toast.success(`Enriched ${json.enriched} leads`)
+      } else {
+        toast.error(json?.error || 'Enrichment failed')
+      }
+    } catch (e) {
+      toast.error('Enrichment failed')
+    } finally {
+      setEnriching(false)
     }
   }
 
@@ -437,6 +487,23 @@ export function LeadsManagement({ className }: LeadsManagementProps) {
                   </DialogContent>
                 </Dialog>
                 <ScrapeGoogleMapsDialog onImported={() => fetchLeads()} />
+                {/* Scraper Hub Unified */}
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="outline">
+                      Leads von Google Maps scrapen
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-4xl">
+                    <DialogHeader>
+                      <DialogTitle>Scraper Hub</DialogTitle>
+                      <DialogDescription>Scrapen, validieren und direkt in Listen speichern</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <ScraperHub />
+                    </div>
+                  </DialogContent>
+                </Dialog>
                 <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
                   <DialogTrigger asChild>
                     <Button variant="outline">
@@ -499,7 +566,7 @@ export function LeadsManagement({ className }: LeadsManagementProps) {
                                 <SelectValue placeholder="Zuordnung" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">Ignorieren</SelectItem>
+                                <SelectItem value="ignore">Ignorieren</SelectItem>
                                 <SelectItem value="full_name">Full Name</SelectItem>
                                 <SelectItem value="email">Email</SelectItem>
                                 <SelectItem value="company">Company</SelectItem>
@@ -541,6 +608,12 @@ export function LeadsManagement({ className }: LeadsManagementProps) {
               </Dialog>
               <Button variant="outline" onClick={validateSelectedEmails} disabled={selectedLeads.length === 0}>
                 Validate Emails
+              </Button>
+              <Button variant="outline" onClick={llmScoreSelectedLeads} disabled={selectedLeads.length === 0 || scoringLoading}>
+                {scoringLoading ? 'Scoring…' : 'LLM Score'}
+              </Button>
+              <Button variant="outline" onClick={enrichSelectedLeads} disabled={selectedLeads.length === 0 || enriching}>
+                {enriching ? 'Enriching…' : 'Enrich (Firecrawl)'}
               </Button>
               <Button variant="outline">
                 <Download className="h-4 w-4 mr-2" />

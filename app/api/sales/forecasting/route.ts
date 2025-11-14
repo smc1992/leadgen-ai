@@ -42,17 +42,14 @@ export async function GET(request: NextRequest) {
       .lte('period_end', `${year}-12-31`)
       .order('period_start')
 
-    if (error) throw error
+    if (error) {
+      console.warn('forecasts query error, returning defaults:', error)
+      return NextResponse.json({ forecasts: [], pipeline_metrics: { total_pipeline: 0, weighted_pipeline: 0, upcoming_deals_count: 0, average_deal_size: 0 }, period, year }, { status: 200 })
+    }
 
-    // Calculate pipeline metrics
     const pipelineMetrics = await calculatePipelineMetrics(session.user.id, isAdminOrManager)
 
-    return NextResponse.json({
-      forecasts: forecasts || [],
-      pipeline_metrics: pipelineMetrics,
-      period,
-      year
-    })
+    return NextResponse.json({ forecasts: forecasts || [], pipeline_metrics: pipelineMetrics, period, year })
   } catch (error) {
     console.error('Forecasting GET error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

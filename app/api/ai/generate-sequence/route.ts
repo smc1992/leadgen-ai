@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { goal, targetAudience, companyInfo, numberOfEmails, duration, useKnowledgeBase } = body
+    const { goal, targetAudience, companyInfo, numberOfEmails, duration, useKnowledgeBase, tone, intentHints } = body
 
     let knowledgeBase = ''
 
@@ -34,16 +34,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate email sequence
-    const emails = await generateEmailSequence(
-      {
-        goal,
-        targetAudience,
-        companyInfo,
-        numberOfEmails,
-        duration
-      },
-      knowledgeBase
-    )
+    const emails = await generateEmailSequence({ goal, targetAudience, companyInfo, numberOfEmails, duration, tone, intentHints }, knowledgeBase)
 
     return NextResponse.json({
       success: true,

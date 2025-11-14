@@ -20,9 +20,12 @@ export async function GET(request: NextRequest) {
       .select('*')
       .order('order_position', { ascending: true })
 
-    if (error) throw error
+    if (error) {
+      console.warn('deal_stages query error, returning defaults:', error)
+      return NextResponse.json({ stages: [] }, { status: 200 })
+    }
 
-    return NextResponse.json({ stages })
+    return NextResponse.json({ stages: stages || [] })
   } catch (error) {
     console.error('Deal Stages GET error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

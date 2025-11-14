@@ -84,6 +84,7 @@ export function SalesPipeline() {
     priority: 'medium',
     notes: ''
   })
+  const [submitting, setSubmitting] = useState(false)
   const { toast } = useToast()
 
   useEffect(() => {
@@ -157,6 +158,7 @@ export function SalesPipeline() {
 
   const createNewDeal = async () => {
     try {
+      setSubmitting(true)
       if (!newDealData.title.trim()) {
         toast({
           title: "Error",
@@ -191,6 +193,27 @@ export function SalesPipeline() {
         return null as any
       }
 
+      // Ensure stages exist
+      let stageId = stages[0]?.id
+      if (!stageId) {
+        try {
+          const setupResponse = await fetchWithCsrf('/api/setup/deal-stages', { method: 'POST' })
+          if (setupResponse.ok) {
+            await fetchPipelineData()
+            stageId = stages[0]?.id
+          } else {
+            const sRes = await fetch('/api/sales/deal-stages')
+            const sJson = await sRes.json().catch(()=>({stages:[]}))
+            stageId = (sJson.stages || [])[0]?.id
+          }
+        } catch {}
+      }
+
+      if (!stageId) {
+        toast({ title: 'Error', description: 'No deal stages available. Please try again.', variant: 'destructive' })
+        return
+      }
+
       const dealPayload = {
         title: newDealData.title,
         company_name: newDealData.company_name,
@@ -200,7 +223,7 @@ export function SalesPipeline() {
         expected_close_date: normalizeDate(newDealData.expected_close_date || ''),
         priority: newDealData.priority,
         notes: newDealData.notes,
-        stage_id: stages[0]?.id // Start with first stage (Discovery)
+        stage_id: stageId // Start with first stage (Discovery)
       }
 
       const response = await fetchWithCsrf('/api/sales/deals', {
@@ -242,6 +265,8 @@ export function SalesPipeline() {
         description: "Failed to create deal",
         variant: "destructive"
       })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -337,7 +362,7 @@ export function SalesPipeline() {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="gap-2">
+              <Button variant="outline" className="gap-2 cursor-pointer transition hover:opacity-90">
                 <Filter className="h-4 w-4" />
                 Filter
               </Button>
@@ -357,7 +382,7 @@ export function SalesPipeline() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button className="gap-2" onClick={() => setShowNewDealDialog(true)}>
+          <Button className="gap-2 cursor-pointer transition hover:scale-[1.02] active:scale-[0.98]" onClick={() => setShowNewDealDialog(true)}>
             <Plus className="h-4 w-4" />
             New Deal
           </Button>
@@ -665,10 +690,10 @@ export function SalesPipeline() {
             </div>
 
             <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={() => setShowNewDealDialog(false)}>
+              <Button variant="outline" className="cursor-pointer transition hover:opacity-90" onClick={() => setShowNewDealDialog(false)} disabled={submitting}>
                 Cancel
               </Button>
-              <Button onClick={createNewDeal}>
+              <Button className="cursor-pointer transition hover:scale-[1.02] active:scale-[0.98]" onClick={createNewDeal} disabled={submitting}>
                 Create Deal
               </Button>
             </div>

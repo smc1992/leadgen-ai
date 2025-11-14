@@ -483,7 +483,7 @@ export default function Home() {
                   <Rocket className="h-5 w-5 ml-2" />
                 </Button>
               </Link>
-              <Button size="lg" variant="outline" className="border-white text-white hover:bg-white/10 px-8 py-4 text-lg hover:scale-105 transition-all duration-300">
+              <Button size="lg" className="bg-blue-600 text-white hover:bg-blue-500 shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 px-8 py-4 text-lg font-semibold">
                 Schedule Demo
               </Button>
             </div>

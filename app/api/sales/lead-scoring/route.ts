@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { supabaseAdmin } from '@/lib/supabase'
+import { llmScoreLead } from '@/lib/openai'
 
 export async function GET(request: NextRequest) {
   try {
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { lead_id, force_recalculate = false } = body
+    const { lead_id, force_recalculate = false, use_llm = false } = body
 
     if (!lead_id) {
       return NextResponse.json({ error: 'Lead ID is required' }, { status: 400 })
@@ -82,6 +83,19 @@ export async function POST(request: NextRequest) {
     if (!existingScore || force_recalculate) {
       // Calculate score based on rules
       const score = await calculateLeadScore(lead)
+
+      if (use_llm) {
+        const { data: outreachHistory } = await supabaseAdmin
+          .from('outreach_emails')
+          .select('status')
+          .eq('lead_email', lead.email)
+        const llm = await llmScoreLead(lead, outreachHistory || [])
+        const adjustedTotal = Math.max(0, Math.min(100, score.total + llm.adjust))
+        score.total = adjustedTotal
+        score.breakdown.llm_adjust = llm.adjust
+        score.breakdown.llm_rationale = llm.rationale
+        score.level = adjustedTotal >= 80 ? 'qualified' : adjustedTotal >= 50 ? 'hot' : adjustedTotal >= 25 ? 'warm' : 'cold'
+      }
 
       if (existingScore) {
         // Update existing score

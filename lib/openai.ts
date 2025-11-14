@@ -23,6 +23,7 @@ export interface EmailGenerationParams {
   keyPoints?: string[]
   tone?: 'professional' | 'casual' | 'friendly' | 'formal'
   length?: 'short' | 'medium' | 'long'
+  constraints?: string[]
 }
 
 export interface CampaignGenerationParams {
@@ -31,6 +32,8 @@ export interface CampaignGenerationParams {
   companyInfo?: string
   numberOfEmails?: number
   duration?: string
+  tone?: 'professional' | 'casual' | 'friendly' | 'formal'
+  intentHints?: string[]
 }
 
 /**
@@ -58,6 +61,7 @@ Purpose: ${params.purpose}
 Target Audience: ${params.targetAudience}
 ${params.companyInfo ? `Company Info: ${params.companyInfo}` : ''}
 ${params.keyPoints?.length ? `Key Points:\n${params.keyPoints.map(p => `- ${p}`).join('\n')}` : ''}
+${params.constraints?.length ? `Constraints:\n${params.constraints.map(c => `- ${c}`).join('\n')}` : ''}
 
 Generate:
 1. A compelling subject line
@@ -117,6 +121,8 @@ Campaign Goal: ${params.goal}
 Target Audience: ${params.targetAudience}
 ${params.companyInfo ? `Company Info: ${params.companyInfo}` : ''}
 Duration: ${params.duration || 'over 2 weeks'}
+Tone: ${params.tone || 'professional'}
+${params.intentHints?.length ? `Intent Hints:\n${params.intentHints.map(i => `- ${i}`).join('\n')}` : ''}
 
 For each email, provide:
 1. Subject line
@@ -251,3 +257,97 @@ Format as JSON:
 
 // Export the client getter function for advanced usage
 export { getOpenAIClient }
+
+export async function llmScoreLead(
+  lead: any,
+  outreachHistory: Array<{ status: string }>
+): Promise<{ adjust: number; rationale: string }> {
+  const prompt = `Evaluate lead potential and propose a score adjustment (-20 to +20) with rationale.
+
+Lead:
+${JSON.stringify({ full_name: lead.full_name, email: lead.email, company: lead.company, job_title: lead.job_title, industry: lead.industry, company_size: lead.company_size }, null, 2)}
+
+Engagement:
+${JSON.stringify(outreachHistory || [], null, 2)}
+
+Return JSON { "adjust": number, "rationale": string }.`
+  const completion = await getOpenAIClient().chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      { role: 'system', content: 'You are a B2B sales analyst. Be concise and numeric.' },
+      { role: 'user', content: prompt }
+    ],
+    temperature: 0.2,
+    response_format: { type: 'json_object' }
+  })
+  const response = JSON.parse(completion.choices[0].message.content || '{"adjust":0,"rationale":""}')
+  let adjust = Number(response.adjust || 0)
+  if (!Number.isFinite(adjust)) adjust = 0
+  adjust = Math.max(-20, Math.min(20, adjust))
+  return { adjust, rationale: String(response.rationale || '') }
+}
+
+export async function classifyReply(
+  body: string
+): Promise<{ status: 'replied'|'bounced'|'out_of_office'|'unsubscribe'|'unknown'; intent?: string; sentiment?: 'positive'|'neutral'|'negative' }> {
+  const prompt = `Classify this email message.
+
+Return JSON with fields: status in [replied,bounced,out_of_office,unsubscribe,unknown], intent (short), sentiment in [positive,neutral,negative].
+
+Message:
+${body}`
+  const completion = await getOpenAIClient().chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      { role: 'system', content: 'You are an email triage assistant.' },
+      { role: 'user', content: prompt }
+    ],
+    temperature: 0.2,
+    response_format: { type: 'json_object' }
+  })
+  const response = JSON.parse(completion.choices[0].message.content || '{"status":"unknown"}')
+  const status = ['replied','bounced','out_of_office','unsubscribe','unknown'].includes(response.status) ? response.status : 'unknown'
+  const sentiment = ['positive','neutral','negative'].includes(response.sentiment) ? response.sentiment : undefined
+  return { status, intent: response.intent, sentiment }
+}
+export async function generateEmailVariants(
+  params: EmailGenerationParams,
+  count: number,
+  knowledgeBase?: string
+): Promise<Array<{ subject: string; content: string }>> {
+  const systemPrompt = `You are an expert email marketing copywriter. Generate multiple distinct variants that comply with constraints and avoid spam triggers.
+
+${knowledgeBase ? `Company Knowledge Base:\n${knowledgeBase}\n\n` : ''}
+
+Tone: ${params.tone || 'professional'}
+Length: ${params.length || 'medium'}`
+
+  const userPrompt = `Create ${count} variants for:
+
+Purpose: ${params.purpose}
+Target Audience: ${params.targetAudience}
+${params.companyInfo ? `Company Info: ${params.companyInfo}` : ''}
+${params.keyPoints?.length ? `Key Points:\n${params.keyPoints.map(p => `- ${p}`).join('\n')}` : ''}
+${params.constraints?.length ? `Constraints:\n${params.constraints.map(c => `- ${c}`).join('\n')}` : ''}
+
+Return JSON:
+{
+  "variants": [
+    { "subject": "...", "content": "..." },
+    { "subject": "...", "content": "..." }
+  ]
+}`
+
+  const completion = await getOpenAIClient().chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    temperature: 0.7,
+    response_format: { type: 'json_object' }
+  })
+
+  const response = JSON.parse(completion.choices[0].message.content || '{"variants":[]}')
+  return Array.isArray(response.variants) ? response.variants : []
+}

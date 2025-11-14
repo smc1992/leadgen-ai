@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { generateEmailContent } from '@/lib/openai'
+import { generateEmailContent, generateEmailVariants } from '@/lib/openai'
 import { supabaseAdmin } from '@/lib/supabase'
 
 export async function POST(request: NextRequest) {
@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { purpose, targetAudience, companyInfo, keyPoints, tone, length, useKnowledgeBase } = body
+    const { purpose, targetAudience, companyInfo, keyPoints, tone, length, useKnowledgeBase, constraints, variants } = body
 
     let knowledgeBase = ''
 
@@ -34,17 +34,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate email content
-    const result = await generateEmailContent(
-      {
-        purpose,
-        targetAudience,
-        companyInfo,
-        keyPoints,
-        tone,
-        length
-      },
-      knowledgeBase
-    )
+    let result: any
+    if (variants && Number(variants) > 1) {
+      result = await generateEmailVariants({ purpose, targetAudience, companyInfo, keyPoints, tone, length, constraints }, Number(variants), knowledgeBase)
+    } else {
+      result = await generateEmailContent({ purpose, targetAudience, companyInfo, keyPoints, tone, length, constraints }, knowledgeBase)
+    }
 
     return NextResponse.json({
       success: true,

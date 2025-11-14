@@ -6,8 +6,26 @@ import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { fetchWithCsrf } from "@/lib/client-fetch"
+import { useToast } from "@/components/ui/use-toast"
 
-type Lead = { fullName?: string; jobTitle?: string; company?: string; email?: string; region?: string; channel?: string; sourceUrl?: string }
+type Lead = {
+  fullName?: string
+  jobTitle?: string
+  company?: string
+  email?: string
+  region?: string
+  channel?: string
+  sourceUrl?: string
+  phone?: string
+  websiteUrl?: string
+  address?: string
+  city?: string
+  country?: string
+  postalCode?: string
+  ratingAvg?: number
+  ratingCount?: number
+  categories?: string[]
+}
 
 export default function ScraperHub() {
   const [tab, setTab] = useState("maps")
@@ -27,7 +45,7 @@ export default function ScraperHub() {
   const [lnCompany, setLnCompany] = useState("")
   const [validatorEmails, setValidatorEmails] = useState("")
   const [lnTitle, setLnTitle] = useState("")
-  const [lnCompanySize, setLnCompanySize] = useState("")
+  const [lnCompanySize, setLnCompanySize] = useState("any")
   const [messeProvider, setMesseProvider] = useState("messe-berlin")
   const [messeParam, setMesseParam] = useState("")
   const [loading, setLoading] = useState(false)
@@ -39,72 +57,160 @@ export default function ScraperHub() {
   const [templateId, setTemplateId] = useState("")
   const [runs, setRuns] = useState<any[]>([])
   const [cronExpr, setCronExpr] = useState("")
+  const { toast } = useToast()
 
   const runMaps = async () => {
-    setLoading(true)
-    setResults([])
-    const run = await fetchWithCsrf("/api/scrape", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "maps", params: { searchQuery: mapsSearch, location: mapsLocation, limit: mapsLimit, withWebsiteOnly: mapsWebsiteOnly } }) })
-    const runJson = await run.json()
-    if (!run.ok) { setLoading(false); return }
-    const runId = runJson.runId
-    const poll = async () => {
-      const res = await fetch(`/api/scrape?runId=${runId}&enrichContacts=${enrichContacts}`)
-      const json = await res.json()
-      if (json.status === "succeeded") { setResults(json.results || []); setLoading(false) } else { setTimeout(poll, 2000) }
+    try {
+      setLoading(true)
+      setResults([])
+      if (!mapsSearch.trim() && !mapsLocation.trim()) {
+        setLoading(false)
+        toast({ title: "Eingabe fehlt", description: "Bitte Suche oder Ort angeben", variant: "destructive" })
+        return
+      }
+      const run = await fetchWithCsrf("/api/scrape", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "maps", params: { searchQuery: mapsSearch, location: mapsLocation, limit: mapsLimit, withWebsiteOnly: mapsWebsiteOnly } }) })
+      const runJson = await run.json().catch(()=>({}))
+      if (!run.ok) { setLoading(false); toast({ title: "Scrape fehlgeschlagen", description: (runJson as any)?.apifyMessage || (runJson as any)?.error || `Status ${run.status}` , variant: "destructive" }); return }
+      const runId = (runJson as any).runId
+      toast({ title: 'Scrape gestartet', description: `Run #${runId}`, variant: 'default' })
+      setRuns((prev)=>[{ id: runId, type: 'maps', status: 'running', result_count: 0 }, ...prev])
+      const poll = async () => {
+        try {
+          const res = await fetch(`/api/scrape?runId=${runId}&enrichContacts=${enrichContacts}`)
+          const json = await res.json()
+          if (json.status === "succeeded") { setResults(json.results || []); setLoading(false) } else { setTimeout(poll, 2000) }
+        } catch (e: any) {
+          setLoading(false)
+          toast({ title: "Status fehlgeschlagen", description: e?.message || 'Unbekannter Fehler', variant: 'destructive' })
+        }
+      }
+      poll()
+    } catch (e: any) {
+      setLoading(false)
+      toast({ title: "Scrape fehlgeschlagen", description: e?.message || 'Unbekannter Fehler', variant: "destructive" })
     }
-    poll()
   }
 
   const runLinkedin = async () => {
-    setLoading(true)
-    setResults([])
-    let searchUrl = linkedinSearchUrl
-    if (!searchUrl && (linkedinKeywords || lnCompany || lnIndustry || lnLocation || lnTitle || lnCompanySize)) {
-      const base = linkedinResultType === "companies" ? "https://www.linkedin.com/search/results/companies/?keywords=" : "https://www.linkedin.com/search/results/people/?keywords="
-      const parts = [linkedinKeywords, lnCompany, lnIndustry, lnLocation, lnTitle, lnCompanySize && `employees ${lnCompanySize}`].filter(Boolean)
-      searchUrl = base + encodeURIComponent(parts.join(" "))
+    try {
+      setLoading(true)
+      setResults([])
+      let searchUrl = linkedinSearchUrl
+      if (!searchUrl && (linkedinKeywords || lnCompany || lnIndustry || lnLocation || lnTitle || (lnCompanySize && lnCompanySize !== 'any'))) {
+        const base = linkedinResultType === "companies" ? "https://www.linkedin.com/search/results/companies/?keywords=" : "https://www.linkedin.com/search/results/people/?keywords="
+        const parts = [
+          linkedinKeywords,
+          lnCompany,
+          lnIndustry,
+          lnLocation,
+          lnTitle,
+          (lnCompanySize && lnCompanySize !== 'any') ? `employees ${lnCompanySize}` : undefined
+        ].filter(Boolean)
+        searchUrl = base + encodeURIComponent(parts.join(" "))
+      }
+      const params = searchUrl ? { searchUrl, startPage, endPage } : { profileUrl: linkedinUrl, limit: 50 }
+      if (!params.searchUrl && !params.profileUrl) {
+        setLoading(false)
+        toast({ title: 'Eingabe fehlt', description: 'Such-URL, Keywords oder Profil-URL erforderlich', variant: 'destructive' })
+        return
+      }
+      const run = await fetchWithCsrf("/api/scrape", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "linkedin", params }) })
+      const runJson = await run.json().catch(()=>({}))
+      if (!run.ok) { setLoading(false); toast({ title: "Scrape fehlgeschlagen", description: (runJson as any)?.apifyMessage || (runJson as any)?.error || `Status ${run.status}` , variant: "destructive" }); return }
+      const runId = (runJson as any).runId
+      toast({ title: 'Scrape gestartet', description: `Run #${runId}`, variant: 'default' })
+      setRuns((prev)=>[{ id: runId, type: 'linkedin', status: 'running', result_count: 0 }, ...prev])
+      const poll = async () => {
+        try {
+          const res = await fetch(`/api/scrape?runId=${runId}`)
+          const json = await res.json()
+          if (json.status === "succeeded") { setResults(json.results || []); setLoading(false) } else { setTimeout(poll, 2000) }
+        } catch (e: any) {
+          setLoading(false)
+          toast({ title: 'Status fehlgeschlagen', description: e?.message || 'Unbekannter Fehler', variant: 'destructive' })
+        }
+      }
+      poll()
+    } catch (e: any) {
+      setLoading(false)
+      toast({ title: "Scrape fehlgeschlagen", description: e?.message || 'Unbekannter Fehler', variant: "destructive" })
     }
-    const params = searchUrl ? { searchUrl, startPage, endPage } : { profileUrl: linkedinUrl, limit: 50 }
-    const run = await fetchWithCsrf("/api/scrape", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "linkedin", params }) })
-    const runJson = await run.json()
-    if (!run.ok) { setLoading(false); return }
-    const runId = runJson.runId
-    const poll = async () => {
-      const res = await fetch(`/api/scrape?runId=${runId}`)
-      const json = await res.json()
-      if (json.status === "succeeded") { setResults(json.results || []); setLoading(false) } else { setTimeout(poll, 2000) }
-    }
-    poll()
   }
 
   const runValidator = async () => {
-    setLoading(true)
-    setResults([])
-    const emails = validatorEmails.split(/[,\n\s]+/).map(e => e.trim()).filter(Boolean)
-    const run = await fetchWithCsrf("/api/scrape", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "validator", params: { emails } }) })
-    const runJson = await run.json()
-    if (!run.ok) { setLoading(false); return }
-    const runId = runJson.runId
-    const poll = async () => {
-      const res = await fetch(`/api/scrape?runId=${runId}`)
-      const json = await res.json()
-      if (json.status === "succeeded") { setResults(json.results || []); setLoading(false) } else { setTimeout(poll, 2000) }
+    try {
+      setLoading(true)
+      setResults([])
+      const emails = validatorEmails.split(/[\n,\s]+/).map(e => e.trim()).filter(Boolean)
+      if (emails.length === 0) {
+        setLoading(false)
+        toast({ title: 'Eingabe fehlt', description: 'Bitte mindestens eine Email eingeben', variant: 'destructive' })
+        return
+      }
+      const run = await fetchWithCsrf("/api/scrape", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "validator", params: { emails } }) })
+      const runJson = await run.json().catch(()=>({}))
+      if (!run.ok) { setLoading(false); toast({ title: "Validator fehlgeschlagen", description: (runJson as any)?.apifyMessage || (runJson as any)?.error || `Status ${run.status}` , variant: "destructive" }); return }
+      const runId = (runJson as any).runId
+      toast({ title: 'Validator gestartet', description: `Run #${runId}`, variant: 'default' })
+      setRuns((prev)=>[{ id: runId, type: 'validator', status: 'running', result_count: 0 }, ...prev])
+      const poll = async () => {
+        try {
+          const res = await fetch(`/api/scrape?runId=${runId}`)
+          const json = await res.json()
+          if (json.status === "succeeded") { setResults(json.results || []); setLoading(false) } else { setTimeout(poll, 2000) }
+        } catch (e: any) {
+          setLoading(false)
+          toast({ title: 'Status fehlgeschlagen', description: e?.message || 'Unbekannter Fehler', variant: 'destructive' })
+        }
+      }
+      poll()
+    } catch (e: any) {
+      setLoading(false)
+      toast({ title: "Validator fehlgeschlagen", description: e?.message || 'Unbekannter Fehler', variant: "destructive" })
     }
-    poll()
   }
 
   const runMesse = async () => {
-    setLoading(true)
-    setResults([])
-    const path = `/api/leads/scrapers/${messeProvider}`
-    const res = await fetchWithCsrf(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: messeParam }) })
-    const json = await res.json()
-    if (res.ok) { setResults(json.leads || []); setLoading(false) } else { setLoading(false) }
+    try {
+      setLoading(true)
+      setResults([])
+      if (!messeParam.trim()) {
+        setLoading(false)
+        toast({ title: 'Eingabe fehlt', description: 'Bitte Parameter eingeben', variant: 'destructive' })
+        return
+      }
+      const path = `/api/leads/scrapers/${messeProvider}`
+      const res = await fetchWithCsrf(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: messeParam }) })
+      const json = await res.json().catch(()=>({}))
+      if (res.ok) { setResults(json.leads || []); setLoading(false) } else { setLoading(false); toast({ title: 'Scrape fehlgeschlagen', description: (json as any)?.error || `Status ${res.status}`, variant: 'destructive' }) }
+    } catch (e: any) {
+      setLoading(false)
+      toast({ title: 'Scrape fehlgeschlagen', description: e?.message || 'Unbekannter Fehler', variant: 'destructive' })
+    }
   }
 
   const saveToList = async () => {
     if (!listName || results.length === 0) return
-    const leads = results.map(r => ({ full_name: r.fullName || "", job_title: r.jobTitle || "", company: r.company || "", email: r.email || "", region: r.region || "", channel: r.channel || "scraper", source_url: r.sourceUrl || "" }))
+    const leads = results.map(r => ({
+      full_name: r.fullName || "",
+      job_title: r.jobTitle || "",
+      company: r.company || "",
+      email: r.email || "",
+      region: r.region || "",
+      channel: r.channel || "scraper",
+      source_url: r.sourceUrl || "",
+      phone: r.phone || "",
+      website_url: r.websiteUrl || "",
+      address: r.address || "",
+      city: r.city || "",
+      country: r.country || "",
+      postal_code: r.postalCode || "",
+      lat: r.lat ?? null,
+      lng: r.lng ?? null,
+      rating_avg: r.ratingAvg ?? null,
+      rating_count: r.ratingCount ?? null,
+      categories: r.categories ?? undefined
+    }))
     const res = await fetchWithCsrf("/api/leads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leads, listName }) })
     if (res.ok) { setListName("") }
   }
@@ -122,6 +228,14 @@ export default function ScraperHub() {
   const createDealsFromSelection = async () => {
     const indices = Object.entries(selected).filter(([i, v]) => v).map(([i]) => parseInt(i))
     const picks = indices.map(i => results[i]).filter(Boolean)
+    let stageId: string | null = null
+    try {
+      const res = await fetch('/api/sales/deal-stages')
+      const json = await res.json()
+      if (res.ok && Array.isArray(json.stages) && json.stages.length > 0) {
+        stageId = json.stages[0].id
+      }
+    } catch {}
     for (const p of picks) {
       const title = p.company || p.fullName || 'Lead Deal'
       const body = {
@@ -129,9 +243,9 @@ export default function ScraperHub() {
         description: `Imported from ${p.channel || 'scraper'}: ${p.sourceUrl || ''}`,
         deal_value: null,
         currency: 'EUR',
-        stage_id: null,
+        stage_id: stageId || undefined,
         contact_name: p.fullName || null,
-        contact_email: p.email || null,
+        contact_email: (p.email && p.email.trim().length > 0) ? p.email : null,
         company_name: p.company || null,
         source: 'scraper'
       }
@@ -232,7 +346,7 @@ export default function ScraperHub() {
               <Select value={lnCompanySize} onValueChange={setLnCompanySize}>
                 <SelectTrigger><SelectValue placeholder="Firmengröße (optional)" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Beliebig</SelectItem>
+                  <SelectItem value="any">Beliebig</SelectItem>
                   <SelectItem value="1-10">1-10</SelectItem>
                   <SelectItem value="11-50">11-50</SelectItem>
                   <SelectItem value="51-200">51-200</SelectItem>
@@ -338,6 +452,14 @@ export default function ScraperHub() {
                 <th className="text-left">Name</th>
                 <th className="text-left">Firma</th>
                 <th className="text-left">Email</th>
+                <th className="text-left">Telefon</th>
+                <th className="text-left">Website</th>
+                <th className="text-left">Adresse</th>
+                <th className="text-left">Stadt</th>
+                <th className="text-left">Land</th>
+                <th className="text-left">PLZ</th>
+                <th className="text-left">Bewertung</th>
+                <th className="text-left">Reviews</th>
                 <th className="text-left">Kanal</th>
                 <th className="text-left">Quelle</th>
               </tr>
@@ -350,6 +472,14 @@ export default function ScraperHub() {
                   </td>
                   <td>{r.company || ""}</td>
                   <td>{r.email || ""}</td>
+                  <td>{r.phone || ""}</td>
+                  <td className="truncate max-w-[200px]">{r.websiteUrl || ""}</td>
+                  <td className="truncate max-w-[240px]">{r.address || ""}</td>
+                  <td>{r.city || ""}</td>
+                  <td>{r.country || ""}</td>
+                  <td>{r.postalCode || ""}</td>
+                  <td>{typeof r.ratingAvg === 'number' ? r.ratingAvg.toFixed(1) : ''}</td>
+                  <td>{r.ratingCount ?? ''}</td>
                   <td>{r.channel || ""}</td>
                   <td className="truncate max-w-[240px]">{r.sourceUrl || ""}</td>
                 </tr>
@@ -364,6 +494,12 @@ export default function ScraperHub() {
                 <div className="font-medium text-sm">{r.fullName || ""}</div>
                 <div className="text-xs text-muted-foreground">{r.company || ""}</div>
                 <div className="text-xs break-all">{r.email || ""}</div>
+                <div className="text-xs break-all">{r.phone || ""}</div>
+                <div className="text-xs truncate max-w-[240px]">{r.websiteUrl || ""}</div>
+                <div className="text-xs truncate max-w-[240px]">{r.address || ""}</div>
+                <div className="text-xs text-muted-foreground">{r.city || ""} {r.postalCode || ""}</div>
+                <div className="text-xs text-muted-foreground">{r.country || ""}</div>
+                <div className="text-xs">{typeof r.ratingAvg === 'number' ? `${r.ratingAvg.toFixed(1)} ⭐` : ''} {r.ratingCount ? `(${r.ratingCount})` : ''}</div>
                 <div className="text-xs text-muted-foreground">{r.channel || ""}</div>
                 <div className="text-xs truncate max-w-[240px]">{r.sourceUrl || ""}</div>
               </div>

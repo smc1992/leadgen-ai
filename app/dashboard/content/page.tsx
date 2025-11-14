@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, FileText, Video, Image, Calendar, Sparkles, Info, Settings, ExternalLink } from "lucide-react"
+import { Plus, FileText, Video, Image, Calendar, Sparkles, Info, Settings, ExternalLink, Share2 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import Link from "next/link"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -57,10 +57,33 @@ export default function ContentPage() {
   const [videoGeneratorOpen, setVideoGeneratorOpen] = useState(false)
   const [imageGeneratorOpen, setImageGeneratorOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [env, setEnv] = useState<any>(null)
+  const [publishOpen, setPublishOpen] = useState(false)
+  const [publishForm, setPublishForm] = useState({
+    accountId: '',
+    platform: 'twitter',
+    text: '',
+    mediaUrls: '',
+    scheduledTime: '',
+    pageId: '',
+    mediaType: '' as string,
+    useNextFreeSlot: false
+  })
 
   // Prevent hydration mismatch
   useEffect(() => {
     setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    const checkEnv = async () => {
+      try {
+        const res = await fetch('/api/test-env')
+        const json = await res.json()
+        setEnv(json)
+      } catch {}
+    }
+    checkEnv()
   }, [])
 
   const getStatusBadge = (status: string) => {
@@ -114,6 +137,10 @@ export default function ContentPage() {
               Blotato
             </Badge>
           </Button>
+          <Button variant="outline" onClick={() => setPublishOpen(true)} className="relative">
+            <Share2 className="mr-2 h-4 w-4" />
+            Publish
+          </Button>
         </div>
       </div>
 
@@ -144,6 +171,106 @@ export default function ContentPage() {
         }}
       />
 
+      <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Publish Post</DialogTitle>
+            <DialogDescription>Publish via Blotato</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Account ID</Label>
+                <Input value={publishForm.accountId} onChange={(e)=>setPublishForm({...publishForm, accountId: e.target.value})} placeholder="acc_12345" />
+              </div>
+              <div>
+                <Label>Platform</Label>
+                <Select value={publishForm.platform} onValueChange={(v)=>setPublishForm({...publishForm, platform: v})}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="twitter">Twitter</SelectItem>
+                    <SelectItem value="linkedin">LinkedIn</SelectItem>
+                    <SelectItem value="facebook">Facebook</SelectItem>
+                    <SelectItem value="instagram">Instagram</SelectItem>
+                    <SelectItem value="tiktok">TikTok</SelectItem>
+                    <SelectItem value="threads">Threads</SelectItem>
+                    <SelectItem value="bluesky">Bluesky</SelectItem>
+                    <SelectItem value="pinterest">Pinterest</SelectItem>
+                    <SelectItem value="youtube">YouTube</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label>Text</Label>
+              <Textarea value={publishForm.text} onChange={(e)=>setPublishForm({...publishForm, text: e.target.value})} rows={3} />
+            </div>
+            <div>
+              <Label>Media URLs (comma separated)</Label>
+              <Input value={publishForm.mediaUrls} onChange={(e)=>setPublishForm({...publishForm, mediaUrls: e.target.value})} placeholder="https://database.blotato.com/...." />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label>Scheduled Time (ISO)</Label>
+                <Input value={publishForm.scheduledTime} onChange={(e)=>setPublishForm({...publishForm, scheduledTime: e.target.value})} placeholder="2025-12-31T23:59:59Z" />
+              </div>
+              <div>
+                <Label>Page ID (optional)</Label>
+                <Input value={publishForm.pageId} onChange={(e)=>setPublishForm({...publishForm, pageId: e.target.value})} />
+              </div>
+              <div>
+                <Label>Media Type</Label>
+                <Select value={publishForm.mediaType} onValueChange={(v)=>setPublishForm({...publishForm, mediaType: v})}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="auto" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">auto</SelectItem>
+                    <SelectItem value="video">video</SelectItem>
+                    <SelectItem value="reel">reel</SelectItem>
+                    <SelectItem value="story">story</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={publishForm.useNextFreeSlot} onChange={(e)=>setPublishForm({...publishForm, useNextFreeSlot: e.target.checked})} className="h-4 w-4" />
+              <Label className="cursor-pointer">Use next free slot</Label>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={()=>setPublishOpen(false)}>Cancel</Button>
+              <Button onClick={async ()=>{
+                try {
+                  const mediaUrlsArr = publishForm.mediaUrls.split(',').map(s=>s.trim()).filter(Boolean)
+                  const res = await fetch('/api/content/publish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      accountId: publishForm.accountId,
+                      platform: publishForm.platform,
+                      text: publishForm.text,
+                      mediaUrls: mediaUrlsArr,
+                      scheduledTime: publishForm.scheduledTime || undefined,
+                      pageId: publishForm.pageId || undefined,
+                      mediaType: publishForm.mediaType || undefined,
+                      useNextFreeSlot: publishForm.useNextFreeSlot || undefined
+                    })
+                  })
+                  const json = await res.json()
+                  if (!res.ok) throw new Error(json?.error || 'Failed to publish')
+                  toast.success('Published')
+                  setPublishOpen(false)
+                } catch (e: any) {
+                  toast.error(e?.message || 'Failed to publish')
+                }
+              }}>Publish</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Blotato Integration Info */}
       <Alert>
         <Info className="h-4 w-4" />
@@ -154,6 +281,14 @@ export default function ContentPage() {
           <p className="text-sm">
             Generate and publish AI-powered content directly to your social media platforms using Blotato API.
           </p>
+          {env && env.BLOTATO_API_KEY === 'MISSING' && (
+            <div className="rounded-md border p-3 text-sm">
+              <div className="font-medium mb-1">BLOTATO_API_KEY fehlt</div>
+              <div>
+                Bitte setze die Umgebungsvariable <code>BLOTATO_API_KEY</code> in deinem Hosting (Netlify) mit deinem Blotato API Key. Danach diese Seite neu laden.
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2 mt-2 mb-2">
             <Badge variant="outline">Twitter</Badge>
             <Badge variant="outline">LinkedIn</Badge>

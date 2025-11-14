@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import {
   Dialog,
@@ -36,6 +36,8 @@ import {
   Info,
 } from "lucide-react"
 import type { Lead } from "@/lib/supabase"
+import { fetchWithCsrf } from "@/lib/client-fetch"
+import { Card as UICard } from "@/components/ui/card"
 
 interface LeadDetailModalProps {
   lead: Lead | null
@@ -94,6 +96,10 @@ export function LeadDetailModal({ lead, open, onOpenChange }: LeadDetailModalPro
   const [newNote, setNewNote] = useState("")
   const [isEditing, setIsEditing] = useState(false)
   const [editedLead, setEditedLead] = useState<Partial<Lead>>({})
+  const [scoreDetails, setScoreDetails] = useState<any | null>(null)
+  const [scoring, setScoring] = useState(false)
+  const [enrichments, setEnrichments] = useState<any[]>([])
+  const [applying, setApplying] = useState(false)
 
   if (!lead) return null
 
@@ -126,6 +132,68 @@ export function LeadDetailModal({ lead, open, onOpenChange }: LeadDetailModalPro
   const handleCancelEdit = () => {
     setIsEditing(false)
     setEditedLead({})
+  }
+
+  useEffect(() => {
+    const loadScore = async () => {
+      try {
+        const res = await fetch(`/api/sales/lead-scoring?lead_id=${encodeURIComponent(lead.id)}`)
+        const json = await res.json()
+        if (res.ok && json.score) setScoreDetails(json.score)
+      } catch {}
+    }
+    const loadEnrichments = async () => {
+      try {
+        const res = await fetch(`/api/leads/enrichments?leadId=${encodeURIComponent(lead.id)}`)
+        const json = await res.json()
+        if (res.ok) setEnrichments(json.items || [])
+      } catch {}
+    }
+    loadScore()
+    loadEnrichments()
+  }, [lead.id])
+
+  const handleRecalculateLLM = async () => {
+    try {
+      setScoring(true)
+      const res = await fetchWithCsrf('/api/sales/lead-scoring', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: lead.id, use_llm: true, force_recalculate: true })
+      })
+      const json = await res.json()
+      if (res.ok && json.score) {
+        setScoreDetails(json.score)
+        toast.success('LLM scoring updated')
+      } else {
+        toast.error('Scoring failed')
+      }
+    } catch (e) {
+      toast.error('Scoring failed')
+    } finally {
+      setScoring(false)
+    }
+  }
+
+  const applyLeadField = async (fields: Partial<Lead>) => {
+    try {
+      setApplying(true)
+      const res = await fetchWithCsrf(`/api/leads/${encodeURIComponent(lead.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fields)
+      })
+      const json = await res.json()
+      if (res.ok) {
+        toast.success('Lead aktualisiert')
+      } else {
+        toast.error(json?.error || 'Update fehlgeschlagen')
+      }
+    } catch {
+      toast.error('Update fehlgeschlagen')
+    } finally {
+      setApplying(false)
+    }
   }
 
   return (
@@ -379,6 +447,142 @@ export function LeadDetailModal({ lead, open, onOpenChange }: LeadDetailModalPro
                     {getScoreBadge(lead.score)}
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Lead Score Details */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Lead Score Details</CardTitle>
+                <CardDescription>Breakdown und LLM‑Begründung</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {scoreDetails ? (
+                  <div className="space-y-2">
+                    <div className="text-sm">Total: <span className="font-medium">{scoreDetails.total_score}</span></div>
+                    <div className="text-sm">Level: <span className="font-medium">{scoreDetails.qualification_level}</span></div>
+                    {scoreDetails.score_breakdown && (
+                      <div className="space-y-1">
+                        {Object.entries(scoreDetails.score_breakdown).map(([k,v]) => (
+                          <div key={String(k)} className="text-xs flex justify-between">
+                            <span className="text-muted-foreground">{String(k)}</span>
+                            <span className="font-medium">{typeof v === 'number' ? v : String(v)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {typeof scoreDetails?.score_breakdown?.llm_adjust === 'number' && (
+                      <div className="text-xs mt-2">
+                        <span className="text-muted-foreground">LLM Adjust:</span>
+                        <span className="ml-1 font-medium">
+                          {scoreDetails.score_breakdown.llm_adjust > 0 ? `+${scoreDetails.score_breakdown.llm_adjust}` : scoreDetails.score_breakdown.llm_adjust}
+                        </span>
+                      </div>
+                    )}
+                    {scoreDetails?.score_breakdown?.llm_rationale && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {String(scoreDetails.score_breakdown.llm_rationale)}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground">Keine Score‑Details vorhanden</div>
+                )}
+                <Button className="w-full" variant="outline" onClick={handleRecalculateLLM} disabled={scoring}>
+                  {scoring ? 'Recalculating…' : 'Recalculate (LLM)'}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Enrichment Review */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Enrichment</CardTitle>
+                <CardDescription>Branding, Links und Zusammenfassung</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {enrichments.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">Keine Enrichment‑Einträge</div>
+                ) : (
+                  <div className="space-y-4">
+                    {enrichments.slice(0,1).map((e) => (
+                      <div key={e.id} className="space-y-3">
+                        {e.branding?.colors && (
+                          <div>
+                            <Label className="text-sm font-medium">Brand Colors</Label>
+                            <div className="flex gap-2 mt-2">
+                              {Object.values(e.branding.colors).slice(0,5).map((c: any, i: number) => (
+                                <div key={i} className="w-6 h-6 rounded" style={{ backgroundColor: String(c) }} title={String(c)} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {Array.isArray(e.links) && e.links.length > 0 && (
+                          <div>
+                            <Label className="text-sm font-medium">Links</Label>
+                            <div className="text-xs mt-2 space-y-2">
+                              {(() => {
+                                const arr = e.links.slice(0,20).map((l: any) => String(l))
+                                const emails = arr.filter((l: string) => l.toLowerCase().startsWith('mailto:')).map((l: string) => l.replace(/^mailto:/i, ''))
+                                const phones = arr.filter((l: string) => l.toLowerCase().startsWith('tel:')).map((l: string) => l.replace(/^tel:/i, ''))
+                                const contacts = arr.filter((l: string) => /kontakt|contact|impressum/i.test(l))
+                                return (
+                                  <div className="space-y-2">
+                                    {emails.length > 0 && (
+                                      <div>
+                                        <div className="text-muted-foreground mb-1">E‑Mails</div>
+                                        {emails.slice(0,3).map((em: string, idx: number) => (
+                                          <div key={idx} className="flex items-center justify-between gap-2">
+                                            <div className="truncate">{em}</div>
+                                            <Button variant="outline" size="sm" disabled={applying} onClick={() => applyLeadField({ email: em } as any)}>Apply</Button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {phones.length > 0 && (
+                                      <div>
+                                        <div className="text-muted-foreground mb-1">Telefon</div>
+                                        {phones.slice(0,3).map((ph: string, idx: number) => (
+                                          <div key={idx} className="flex items-center justify-between gap-2">
+                                            <div className="truncate">{ph}</div>
+                                            <Button variant="outline" size="sm" disabled={applying} onClick={() => applyLeadField({ phone: ph } as any)}>Apply</Button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {contacts.length > 0 && (
+                                      <div>
+                                        <div className="text-muted-foreground mb-1">Kontakt/Impressum</div>
+                                        {contacts.slice(0,3).map((url: string, idx: number) => (
+                                          <div key={idx} className="flex items-center justify-between gap-2">
+                                            <div className="truncate">{url}</div>
+                                            <a className="text-blue-600" href={url} target="_blank" rel="noreferrer">Open</a>
+                                            <Button variant="outline" size="sm" disabled={applying} onClick={() => {
+                                              try {
+                                                const u = new URL(url)
+                                                applyLeadField({ website_url: `${u.protocol}//${u.hostname}` } as any)
+                                              } catch {}
+                                            }}>Apply</Button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })()}
+                            </div>
+                          </div>
+                        )}
+                        {e.summary && (
+                          <div>
+                            <Label className="text-sm font-medium">Summary</Label>
+                            <div className="text-xs mt-1 text-muted-foreground whitespace-pre-wrap">{e.summary}</div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 

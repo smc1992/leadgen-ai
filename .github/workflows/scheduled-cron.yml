@@ -22,6 +22,15 @@ jobs:
             exit 1
           fi
           echo "Calling $CRON_URL"
-          curl -s -X POST "$CRON_URL" \
+          RESP=$(curl -s -S -i -X POST "$CRON_URL" \
             -H "x-cron-secret: $CRON_SECRET" \
-            --fail || { echo "Cron call failed"; exit 1; }
+            -H "Content-Type: application/json" \
+            --data '{}')
+          STATUS=$(echo "$RESP" | sed -n '1s/HTTP\/[^ ]* \([0-9][0-9][0-9]\).*/\1/p')
+          echo "Response status: $STATUS"
+          echo "Response body:"
+          echo "$RESP" | sed -n '/^{/,$p'
+          if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
+            echo "Cron call failed"
+            exit 1
+          fi

@@ -102,19 +102,34 @@ export async function POST(request: NextRequest) {
         break
 
       case 'maps':
-        actorId = process.env.APIFY_ACTOR_ID_GMAPS || 'compass/crawler-google-places'
-        runInput = {
-          // Apify expects separate search strings and a locationQuery
-          searchStringsArray: [params.searchQuery],
-          locationQuery: params.location,
-          maxCrawledPlacesPerSearch: params.limit || 100,
-          // If enrichment is requested, focus on places with website to optimize cost
-          ...(params.withWebsiteOnly ? { websiteEnum: 'withWebsite' } : {}),
-          // Business leads enrichment (paid add-on): set max leads per place
-          ...(typeof params.maxLeads === 'number' && params.maxLeads > 0
-            ? { maximumLeadsEnrichmentRecords: params.maxLeads }
-            : { maximumLeadsEnrichmentRecords: 0 }),
-          proxyConfiguration: { useApifyProxy: true }
+        // Prefer the Extractor by default; fall back to crawler if needed
+        actorId = process.env.APIFY_ACTOR_ID_GMAPS || 'compass/google-maps-extractor'
+        if (actorId.includes('google-maps-extractor')) {
+          // Input shape for Google Maps Extractor (compass/google-maps-extractor)
+          runInput = {
+            searchStringsArray: params.searchQuery ? [params.searchQuery] : undefined,
+            categoryFilterWords: Array.isArray((params as any)?.categoryFilterWords) ? (params as any).categoryFilterWords : undefined,
+            deeperCityScrape: false,
+            language: 'en',
+            locationQuery: params.location,
+            maxCrawledPlacesPerSearch: params.limit || 100,
+            skipClosedPlaces: false,
+            searchMatching: 'all',
+            placeMinimumStars: '',
+            proxyConfiguration: { useApifyProxy: true }
+          }
+        } else {
+          // Input shape for legacy crawler (compass/crawler-google-places)
+          runInput = {
+            searchStringsArray: [params.searchQuery],
+            locationQuery: params.location,
+            maxCrawledPlacesPerSearch: params.limit || 100,
+            ...(params.withWebsiteOnly ? { websiteEnum: 'withWebsite' } : {}),
+            ...(typeof params.maxLeads === 'number' && params.maxLeads > 0
+              ? { maximumLeadsEnrichmentRecords: params.maxLeads }
+              : { maximumLeadsEnrichmentRecords: 0 }),
+            proxyConfiguration: { useApifyProxy: true }
+          }
         }
         break
 
@@ -132,12 +147,10 @@ export async function POST(request: NextRequest) {
         }, { status: 400 })
     }
 
-    // Normalize actor id for HTTP API (username~actor-name)
-    const normalizedActorId = actorId.includes('/') ? actorId.replace('/', '~') : actorId
-
-    // Helper to start run
-    const startRun = async (input: any) => {
-      return fetch(`${APIFY_API_URL}/acts/${normalizedActorId}/runs`, {
+    // Helper to start run with actor normalization
+    const startRun = async (actor: string, input: any) => {
+      const normalized = actor.includes('/') ? actor.replace('/', '~') : actor
+      return fetch(`${APIFY_API_URL}/acts/${normalized}/runs`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${APIFY_TOKEN}`,
@@ -148,7 +161,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Start the scraper run
-    let runResponse = await startRun(runInput)
+    let runResponse = await startRun(actorId, runInput)
 
     // Retry without website filter if actor rejects unknown params
     if (!runResponse.ok && type === 'maps' && params?.withWebsiteOnly) {
@@ -161,11 +174,26 @@ export async function POST(request: NextRequest) {
           if (retryInput.websiteEnum) delete retryInput.websiteEnum
           // If input validation is strict, also remove optional enrichment count
           if (retryInput.maximumLeadsEnrichmentRecords !== undefined) delete retryInput.maximumLeadsEnrichmentRecords
-          runResponse = await startRun(retryInput)
+          runResponse = await startRun(actorId, retryInput)
         } catch (e) {
           // Fall through to error handling below
         }
       }
+    }
+
+    // Fallback to crawler if extractor rejected input format
+    if (!runResponse.ok && type === 'maps' && actorId.includes('google-maps-extractor')) {
+      try {
+        const crawlerActor = 'compass/crawler-google-places'
+        const crawlerInput = {
+          searchStringsArray: [params.searchQuery],
+          locationQuery: params.location,
+          maxCrawledPlacesPerSearch: params.limit || 100,
+          proxyConfiguration: { useApifyProxy: true }
+        }
+        runResponse = await startRun(crawlerActor, crawlerInput)
+        actorId = crawlerActor
+      } catch {}
     }
 
     if (!runResponse.ok) {
@@ -344,6 +372,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (Array.isArray(results) && results.length) {
+        const nowIso = new Date().toISOString()
         const leadsToInsert = results.slice(0, 500).map(r => ({
           user_id: session.user.id,
           full_name: r.fullName || '',
@@ -355,8 +384,20 @@ export async function GET(request: NextRequest) {
           region: r.region || null,
           channel: r.channel || 'unknown',
           source_url: r.sourceUrl || null,
+          phone: r.phone || null,
+          website_url: r.websiteUrl || null,
+          address: r.address || null,
+          city: r.city || null,
+          country: r.country || null,
+          postal_code: r.postalCode || null,
+          lat: r.lat ?? null,
+          lng: r.lng ?? null,
+          rating_avg: typeof r.ratingAvg === 'number' ? r.ratingAvg : null,
+          rating_count: typeof r.ratingCount === 'number' ? r.ratingCount : null,
+          categories: Array.isArray((r as any).categories) ? (r as any).categories : null,
           is_outreach_ready: false,
-          created_at: new Date().toISOString()
+          created_at: nowIso,
+          updated_at: nowIso,
         }))
         try {
           await supabaseAdmin

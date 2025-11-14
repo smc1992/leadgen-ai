@@ -92,14 +92,12 @@ export async function GET(request: NextRequest) {
       .order('updated_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
-    if (error) throw error
+    if (error) {
+      console.warn('deals query error, returning empty list:', error)
+      return NextResponse.json({ deals: [], total: 0, limit, offset }, { status: 200 })
+    }
 
-    return NextResponse.json({
-      deals: deals || [],
-      total: count || 0,
-      limit,
-      offset
-    })
+    return NextResponse.json({ deals: deals || [], total: count || 0, limit, offset })
   } catch (error) {
     console.error('Deals GET error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -148,6 +146,21 @@ export async function POST(request: NextRequest) {
     // Normalize date to Postgres DATE format
     const normalizedExpectedCloseDate = normalizeDate(expected_close_date)
 
+    // Ensure a valid stage_id
+    let finalStageId = stage_id
+    if (!finalStageId) {
+      const { data: firstStage } = await supabaseAdmin
+        .from('deal_stages')
+        .select('id')
+        .order('order_position', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      finalStageId = firstStage?.id || null
+      if (!finalStageId) {
+        return NextResponse.json({ error: 'No deal stages available' }, { status: 400 })
+      }
+    }
+
     const { data, error } = await supabaseAdmin
       .from('deals')
       .insert({
@@ -155,7 +168,7 @@ export async function POST(request: NextRequest) {
         description,
         deal_value,
         currency: currency || 'EUR',
-        stage_id,
+        stage_id: finalStageId,
         lead_id,
         contact_name,
         contact_email,
@@ -182,12 +195,11 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) {
-      // Provide clearer feedback for common bad input (e.g., date formatting)
       const message = typeof error.message === 'string' && error.message.toLowerCase().includes('date')
         ? 'Invalid date format for expected_close_date. Use YYYY-MM-DD or DD.MM.YYYY.'
-        : 'Failed to insert deal'
+        : (typeof error.message === 'string' ? error.message : 'Failed to insert deal')
       console.error('Deals POST insert error:', error)
-      return NextResponse.json({ error: message }, { status: 400 })
+      return NextResponse.json({ error: message, details: error }, { status: 400 })
     }
 
     // Log activity

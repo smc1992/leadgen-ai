@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { Loader2, Video, Play, Download, RefreshCw } from "lucide-react"
+import { Loader2, Video, Play, Download, RefreshCw, Trash2, Share2 } from "lucide-react"
 import { VideoStyle } from "@/lib/blotato-api"
 
 const videoGeneratorSchema = z.object({
@@ -187,6 +187,39 @@ export function VideoGeneratorWizard({ open, onOpenChange, onSave }: VideoGenera
       onSave(generatedVideo)
       toast.success("Video saved!")
       onOpenChange(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!generatedVideo) return
+    try {
+      const res = await fetch(`/api/content/video-status/${generatedVideo.id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete video')
+      toast.success('Video deleted')
+      handleRegenerate()
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to delete video')
+    }
+  }
+
+  const handlePublish = async () => {
+    if (!generatedVideo?.videoUrl) return
+    try {
+      const res = await fetch('/api/content/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: 'acc_12345',
+          platform: 'tiktok',
+          text: 'AI generated video',
+          mediaUrls: [generatedVideo.videoUrl]
+        })
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error || 'Failed to publish')
+      toast.success('Published')
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to publish')
     }
   }
 
@@ -425,6 +458,14 @@ export function VideoGeneratorWizard({ open, onOpenChange, onSave }: VideoGenera
               <Button variant="outline" onClick={handleRegenerate}>
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Regenerate
+              </Button>
+              <Button variant="outline" onClick={handleDelete}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </Button>
+              <Button variant="outline" onClick={handlePublish}>
+                <Share2 className="mr-2 h-4 w-4" />
+                Publish
               </Button>
               <Button variant="outline">
                 <Download className="mr-2 h-4 w-4" />

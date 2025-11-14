@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useSession } from "next-auth/react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,6 +14,7 @@ import { getAIService, initializeAIService } from "@/lib/ai-service"
 import { toast } from "sonner"
 
 export default function AIDashboardPage() {
+  const { status } = useSession()
   const [apiKey, setApiKey] = useState("")
   const [isConfigured, setIsConfigured] = useState(false)
   const [isScoring, setIsScoring] = useState(false)
@@ -20,6 +22,20 @@ export default function AIDashboardPage() {
   const [scoringResult, setScoringResult] = useState<any>(null)
   const [personalizedEmail, setPersonalizedEmail] = useState<any>(null)
   const [generatedContent, setGeneratedContent] = useState("")
+  const [serverAIReady, setServerAIReady] = useState<'checking'|'ready'|'missing'>('checking')
+
+  useEffect(() => {
+    const checkEnv = async () => {
+      try {
+        const res = await fetch('/api/test-env')
+        const json = await res.json()
+        setServerAIReady(json.OPENAI_API_KEY === 'SET' ? 'ready' : 'missing')
+      } catch {
+        setServerAIReady('missing')
+      }
+    }
+    checkEnv()
+  }, [])
 
   const handleSaveApiKey = () => {
     if (!apiKey.trim()) {
@@ -146,6 +162,14 @@ export default function AIDashboardPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {(status !== 'authenticated' || serverAIReady === 'missing') && (
+              <Alert>
+                <Brain className="h-4 w-4" />
+                <AlertDescription>
+                  {status !== 'authenticated' ? 'Please sign in to use server AI features.' : 'Server OPENAI_API_KEY is missing; admin needs to configure environment.'}
+                </AlertDescription>
+              </Alert>
+            )}
             <div className="space-y-2">
               <Label htmlFor="api-key">API Key</Label>
               <Input

@@ -7,8 +7,20 @@ const buckets: Map<string, Bucket> = (globalThis as any).__rateBuckets || new Ma
 
 export function checkOrigin(req: NextRequest) {
   const origin = req.headers.get('origin') || req.headers.get('referer') || ''
-  if (!origin) return NextResponse.json({ error: 'Origin missing' }, { status: 400 })
-  if (!origin.startsWith(config.appUrl)) {
+  if (!origin) return null
+  const getHost = (u: string) => {
+    try {
+      return new URL(u).hostname
+    } catch {
+      return ''
+    }
+  }
+  const originHost = getHost(origin)
+  if (!originHost) return null
+  const currentHost = req.nextUrl.hostname
+  const configuredHost = config.appUrl ? getHost(config.appUrl) : ''
+  const allowedHosts = new Set([currentHost, configuredHost].filter(Boolean))
+  if (!allowedHosts.has(originHost)) {
     return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
   }
   return null

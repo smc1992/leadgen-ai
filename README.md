@@ -50,7 +50,13 @@ Edit `.env.local` with your API keys:
 - Supabase URL and Anon Key
 - Apify Token
 - Instantly API Key
-- Blotato API Key
+ - Blotato API Key
+
+### Blotato Setup
+
+- Add `BLOTATO_API_KEY` to `.env.local` (local) and Hosting (Netlify/Vercel) environment.
+- Upload media first via Blotato CDN (`/v2/media`), then use returned `https://database.blotato.com/...` URLs in posts (`/v2/posts`).
+- See detailed guide: `BLOTATO-API-COMPLETE.md` (Publishing, Upload Media, Create/Find/Delete Video, Rate Limits).
 
 3. **Set up Supabase database**:
 
@@ -90,7 +96,8 @@ emex-dashboard/
 │   ├── supabase.ts           # Supabase client
 │   ├── apify.ts              # Apify integration
 │   ├── instantly.ts          # Instantly API
-│   ├── blotato.ts            # Blotato API
+│   ├── blotato-api.ts        # Blotato API v2 client (production)
+│   ├── blotato.ts            # Deprecated mock (use blotato-api.ts)
 │   └── scoring.ts            # Lead scoring logic
 └── env.example               # Environment template
 ```
