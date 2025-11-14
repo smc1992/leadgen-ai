@@ -25,15 +25,12 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Update email status to 'opened'
     const { error: updateError } = await supabaseAdmin
-      .from('emails')
-      .update({
-        status: 'opened',
-      })
+      .from('outreach_emails')
+      .update({ status: 'opened', opened_at: new Date().toISOString() })
       .eq('campaign_id', campaignId)
       .eq('lead_id', leadId)
-      .eq('status', 'sent') // Only update if currently 'sent'
+      .in('status', ['sent'])
 
     if (!updateError) {
       // Increment campaign opened count
@@ -42,13 +39,10 @@ export async function GET(request: NextRequest) {
         .select('opened_count')
         .eq('id', campaignId)
         .single()
-
       if (campaign) {
         await supabaseAdmin
           .from('email_campaigns')
-          .update({
-            opened_count: (campaign.opened_count || 0) + 1,
-          })
+          .update({ opened_count: (campaign.opened_count || 0) + 1 })
           .eq('id', campaignId)
       }
     }

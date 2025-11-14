@@ -1,20 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { enforceGuards } from '@/lib/security'
+import crypto from 'crypto'
 
 // Handle Pipedrive webhooks for real-time synchronization
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { event, data } = body
-
-    // Verify webhook signature if configured
-    const signature = request.headers.get('x-pipedrive-signature')
-    const webhookSecret = process.env.PIPEDRIVE_WEBHOOK_SECRET
-
-    if (webhookSecret && signature) {
-      // In a real implementation, you'd verify the signature
-      // For now, we'll trust the webhook if it's configured
+    const ip = request.headers.get('x-forwarded-for') || 'unknown'
+    const guard = enforceGuards(request, `pipedrive-webhook:${ip}`, 60, 60_000)
+    if (guard) return guard
+    const raw = await request.text()
+    const signature = request.headers.get('x-pipedrive-signature') || ''
+    const webhookSecret = process.env.PIPEDRIVE_WEBHOOK_SECRET || ''
+    if (webhookSecret) {
+      const h = crypto.createHmac('sha256', webhookSecret)
+      h.update(raw)
+      const digest = h.digest('hex')
+      if (!signature || signature !== digest) {
+        return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })
+      }
     }
+    const body = JSON.parse(raw || '{}')
+    const { event, data } = body
 
     console.log('Pipedrive webhook received:', { event, data: data?.id })
 

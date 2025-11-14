@@ -4,6 +4,11 @@ import GoogleProvider from 'next-auth/providers/google'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { isSupabaseConfigured } from '@/lib/supabase'
 
+if (process.env.NODE_ENV !== 'production') {
+  process.env.NEXTAUTH_URL = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+  process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || 'dev_super_secret_32_chars_minimum_1234567890abcd'
+}
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const enableSupabaseAdapter = Boolean(supabaseUrl && isSupabaseConfigured)
@@ -20,24 +25,25 @@ export const authOptions = {
         clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       })
     ] : []),
-    CredentialsProvider({
-      name: 'credentials',
-      credentials: {
-        email: { label: 'Email', type: 'email' },
-        password: { label: 'Password', type: 'password' }
-      },
-      async authorize(credentials) {
-        // Development mode: accept any email/password combination
-        if (credentials?.email && credentials?.password) {
-          return {
-            id: '550e8400-e29b-41d4-a716-446655440000',
-            email: credentials.email,
-            name: credentials.email.split('@')[0], // Use part before @ as name
+    ...(process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_CREDENTIALS === 'true' ? [
+      CredentialsProvider({
+        name: 'credentials',
+        credentials: {
+          email: { label: 'Email', type: 'email' },
+          password: { label: 'Password', type: 'password' }
+        },
+        async authorize(credentials) {
+          if (credentials?.email && credentials?.password) {
+            return {
+              id: '550e8400-e29b-41d4-a716-446655440000',
+              email: credentials.email,
+              name: credentials.email.split('@')[0],
+            }
           }
+          return null
         }
-        return null
-      }
-    })
+      })
+    ] : [])
   ],
   session: {
     strategy: 'jwt' as const,

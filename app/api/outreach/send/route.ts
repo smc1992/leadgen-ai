@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { campaignId, templateId, leadIds, sendNow = false } = body
+    const { campaignId, templateId, leadIds, sendNow = false, sequenceId = null, stepIndex = null } = body
 
     if (!campaignId || !templateId || !leadIds || leadIds.length === 0) {
       return NextResponse.json(
@@ -55,12 +55,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No valid leads found' }, { status: 404 })
     }
 
+    // Filter unsubscribed
+    const emailsList = (leads || []).map(l => l.email).filter(Boolean)
+    let unsubEmails: string[] = []
+    if (emailsList.length > 0) {
+      const { data: unsubRows } = await supabaseAdmin
+        .from('email_unsubscribes')
+        .select('lead_email')
+        .eq('user_id', session.user.id)
+        .in('lead_email', emailsList)
+      unsubEmails = (unsubRows || []).map(r => r.lead_email)
+    }
+    const filteredLeads = (leads || []).filter(l => !unsubEmails.includes(l.email))
+
     const results = []
     let sentCount = 0
     let failedCount = 0
 
     // Send emails to each lead
-    for (const lead of leads) {
+    for (const lead of filteredLeads) {
       try {
         // Prepare variables for template
         const variables = {
@@ -78,6 +91,9 @@ export async function POST(request: NextRequest) {
 
         // Add tracking to links
         html = addTrackingToLinks(html, campaignId, lead.id)
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+        const unsubLink = `${baseUrl}/outreach/unsubscribe?email=${encodeURIComponent(lead.email || '')}&campaignId=${encodeURIComponent(campaignId)}&leadId=${encodeURIComponent(lead.id)}`
+        html = html + `<div style="margin-top:16px;font-size:12px;color:#6b7280">If you no longer want to receive emails, <a href="${unsubLink}">unsubscribe here</a>.</div>`
 
         // Convert newlines to <br> tags
         html = html.replace(/\n/g, '<br>')
@@ -109,6 +125,8 @@ export async function POST(request: NextRequest) {
             lead_email: lead.email,
             lead_name: lead.full_name,
             template_id: templateId,
+            sequence_id: sequenceId,
+            step_index: stepIndex,
             subject,
             content: html,
             status: 'sent',
@@ -123,7 +141,7 @@ export async function POST(request: NextRequest) {
             messageId: result.messageId,
           })
         } else {
-          failedCount++
+      failedCount++
           results.push({
             leadId: lead.id,
             email: lead.email,
@@ -156,7 +174,7 @@ export async function POST(request: NextRequest) {
       success: true,
       sent: sentCount,
       failed: failedCount,
-      total: leads.length,
+      total: filteredLeads.length,
       results,
     })
   } catch (error) {

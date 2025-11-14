@@ -9,6 +9,9 @@ import { CommandMenu } from "@/components/command-menu"
 import { useGlobalShortcuts } from "@/hooks/use-keyboard-shortcuts"
 import { Loader2, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { MobileNav } from "@/components/ui/mobile-nav"
 
 export default function DashboardLayout({
   children,
@@ -50,24 +53,33 @@ export default function DashboardLayout({
   return (
     <SidebarProvider>
       <AppSidebar />
-      <div className="flex-1 min-h-screen">
-        <header className="sticky top-0 z-40 border-b bg-background">
-          <div className="flex h-16 items-center gap-4 px-4">
+      <div className="flex-1 min-h-screen bg-gradient-to-b from-background to-muted/30">
+        <header className="sticky top-0 z-40 bg-background/80 backdrop-blur border-b">
+          <div className="flex h-14 items-center gap-4 px-4">
             <SidebarTrigger />
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center">E</div>
+              <div className="hidden md:block">
+                <div className="text-sm font-semibold">Emex Dashboard</div>
+                <div className="text-xs text-muted-foreground">Leads & Sales</div>
+              </div>
+            </div>
             <div className="flex-1" />
-            <CommandMenu />
-            <Button
-              variant="outline"
-              onClick={() => signOut({ callbackUrl: "/auth/signin" })}
-            >
+            <div className="hidden md:flex items-center gap-3">
+              <Input placeholder="Suchen" className="max-w-sm" />
+              <CommandMenu />
+              <ThemeToggle />
+            </div>
+            <Button variant="outline" onClick={() => signOut({ callbackUrl: "/auth/signin" })}>
               <LogOut className="mr-2 h-4 w-4" />
               Abmelden
             </Button>
           </div>
         </header>
-        <main className="p-4 md:p-6">
+        <main className="px-4 md:px-6 py-6 max-w-7xl mx-auto">
           {children}
         </main>
+        <MobileNav />
       </div>
     </SidebarProvider>
   )

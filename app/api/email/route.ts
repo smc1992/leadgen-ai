@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { supabaseAdmin } from '@/lib/supabase'
+import { enforceGuards } from '@/lib/security'
+import crypto from 'crypto'
 
-// Instantly API configuration
-const INSTANTLY_API_URL = 'https://api.instantly.ai/api/v1'
-const INSTANTLY_API_KEY = process.env.INSTANTLY_API_KEY
+const EMAIL_CAMPAIGNS_TABLE = 'email_campaigns'
 
 interface InstantlyCampaign {
   name: string
@@ -35,6 +35,9 @@ interface InstantlyLead {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown'
+    const guard = enforceGuards(request, `email-post:${ip}`, 20, 60_000)
+    if (guard) return guard
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -43,11 +46,6 @@ export async function POST(request: NextRequest) {
     if (!supabaseAdmin) {
       console.error('Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.')
       return NextResponse.json({ error: 'Service unavailable: Supabase not configured' }, { status: 503 })
-    }
-
-    if (!INSTANTLY_API_KEY) {
-      console.error('Instantly API key missing. Set INSTANTLY_API_KEY in environment.')
-      return NextResponse.json({ error: 'Service unavailable: Instantly not configured' }, { status: 503 })
     }
 
     const body = await request.json()
@@ -76,23 +74,23 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown'
+    const guard = enforceGuards(request, `email-get:${ip}`, 60, 60_000)
+    if (guard) return guard
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    if (!INSTANTLY_API_KEY) {
-      console.error('Instantly API key missing. Set INSTANTLY_API_KEY in environment.')
-      return NextResponse.json({ error: 'Service unavailable: Instantly not configured' }, { status: 503 })
-    }
-
     const { searchParams } = new URL(request.url)
     const campaignId = searchParams.get('campaignId')
+    const limit = Math.max(1, Math.min(100, parseInt(searchParams.get('limit') || '20')))
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0'))
 
     if (campaignId) {
       return await getCampaignDetails(campaignId, session.user.id)
     } else {
-      return await listCampaigns(session.user.id)
+      return await listCampaigns(session.user.id, { limit, offset })
     }
 
   } catch (error) {
@@ -103,31 +101,11 @@ export async function GET(request: NextRequest) {
 
 async function createCampaign(campaignData: InstantlyCampaign, userId: string) {
   try {
-    if (!INSTANTLY_API_KEY) {
-      throw new Error('Instantly not configured')
-    }
-    const response = await fetch(`${INSTANTLY_API_URL}/campaigns`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${INSTANTLY_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(campaignData)
-    })
-
-    if (!response.ok) {
-      throw new Error('Failed to create campaign')
-    }
-
-    const instantlyCampaign = await response.json()
-
-    // Store campaign in our database
     const { data: dbCampaign, error } = await supabaseAdmin
-      .from('campaigns')
+      .from(EMAIL_CAMPAIGNS_TABLE)
       .insert({
         user_id: userId,
         name: campaignData.name,
-        instantly_id: instantlyCampaign.id,
         subject: campaignData.subject,
         template: campaignData.template,
         status: 'draft',
@@ -139,8 +117,7 @@ async function createCampaign(campaignData: InstantlyCampaign, userId: string) {
     if (error) throw error
 
     return NextResponse.json({ 
-      campaign: dbCampaign,
-      instantlyCampaign 
+      campaign: dbCampaign
     }, { status: 201 })
 
   } catch (error) {
@@ -151,26 +128,10 @@ async function createCampaign(campaignData: InstantlyCampaign, userId: string) {
 
 async function launchCampaign(campaignId: string, userId: string) {
   try {
-    if (!INSTANTLY_API_KEY) {
-      throw new Error('Instantly not configured')
-    }
-    const response = await fetch(`${INSTANTLY_API_URL}/campaigns/${campaignId}/launch`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${INSTANTLY_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    })
-
-    if (!response.ok) {
-      throw new Error('Failed to launch campaign')
-    }
-
-    // Update campaign status in database
     const { error } = await supabaseAdmin
-      .from('campaigns')
+      .from(EMAIL_CAMPAIGNS_TABLE)
       .update({ status: 'active' })
-      .eq('instantly_id', campaignId)
+      .eq('id', campaignId)
       .eq('user_id', userId)
 
     if (error) throw error
@@ -185,23 +146,27 @@ async function launchCampaign(campaignId: string, userId: string) {
 
 async function addLeadsToCampaign(data: { campaignId: string; leads: InstantlyLead[] }, userId: string) {
   try {
-    const response = await fetch(`${INSTANTLY_API_URL}/campaigns/${data.campaignId}/leads`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${INSTANTLY_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ leads: data.leads })
-    })
-
-    if (!response.ok) {
-      throw new Error('Failed to add leads to campaign')
+    // Filter Duplikate
+    const emails = Array.from(new Set((data.leads || []).map(l => l.email.toLowerCase())))
+    const { data: existingLeads } = await supabaseAdmin
+      .from('leads')
+      .select('email')
+      .eq('user_id', userId)
+      .eq('campaign_id', data.campaignId)
+    const existingSet = new Set((existingLeads || []).map(l => (l.email || '').toLowerCase()))
+    const filtered = data.leads.filter(l => !existingSet.has(l.email.toLowerCase()))
+    const reqHash = crypto.createHash('sha256').update(JSON.stringify({ campaignId: data.campaignId, emails: filtered.map(l => l.email) })).digest('hex')
+    const { data: prior } = await supabaseAdmin
+      .from('deal_activities')
+      .select('id')
+      .eq('metadata->>request_hash', reqHash)
+      .limit(1)
+    if (prior && prior.length > 0) {
+      return NextResponse.json({ success: true, addedCount: 0 })
     }
 
-    const result = await response.json()
-
     // Store leads in our database
-    const leadsToInsert = data.leads.map(lead => ({
+    const leadsToInsert = filtered.map(lead => ({
       user_id: userId,
       full_name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
       email: lead.email,
@@ -214,9 +179,18 @@ async function addLeadsToCampaign(data: { campaignId: string; leads: InstantlyLe
       .from('leads')
       .insert(leadsToInsert)
 
+    await supabaseAdmin.from('deal_activities').insert({
+      deal_id: null,
+      user_id: userId,
+      activity_type: 'outreach',
+      description: 'Leads added to campaign',
+      metadata: { request_hash: reqHash, addedCount: filtered.length },
+      created_at: new Date().toISOString()
+    })
+
     return NextResponse.json({ 
       success: true,
-      addedCount: result.addedCount || data.leads.length 
+      addedCount: filtered.length 
     })
 
   } catch (error) {
@@ -227,32 +201,30 @@ async function addLeadsToCampaign(data: { campaignId: string; leads: InstantlyLe
 
 async function getCampaignAnalytics(campaignId: string, userId: string) {
   try {
-    const response = await fetch(`${INSTANTLY_API_URL}/campaigns/${campaignId}/analytics`, {
-      headers: {
-        'Authorization': `Bearer ${INSTANTLY_API_KEY}`
-      }
-    })
-
-    if (!response.ok) {
-      throw new Error('Failed to get campaign analytics')
-    }
-
-    const analytics = await response.json()
-
-    // Update analytics in our database
-    await supabaseAdmin
-      .from('campaigns')
-      .update({
-        sent_count: analytics.sent || 0,
-        opened_count: analytics.opened || 0,
-        clicked_count: analytics.clicked || 0,
-        replied_count: analytics.replied || 0,
-        updated_at: new Date().toISOString()
-      })
-      .eq('instantly_id', campaignId)
+    const { data: emailsAgg } = await supabaseAdmin
+      .from('outreach_emails')
+      .select('status')
+      .eq('campaign_id', campaignId)
       .eq('user_id', userId)
 
-    return NextResponse.json({ analytics })
+    const sent = (emailsAgg || []).filter(e => e.status === 'sent').length
+    const opened = (emailsAgg || []).filter(e => e.status === 'opened').length
+    const clicked = (emailsAgg || []).filter(e => e.status === 'clicked').length
+    const replied = (emailsAgg || []).filter(e => e.status === 'replied').length
+
+    await supabaseAdmin
+      .from(EMAIL_CAMPAIGNS_TABLE)
+      .update({
+        sent_count: sent,
+        opened_count: opened,
+        clicked_count: clicked,
+        replied_count: replied,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', campaignId)
+      .eq('user_id', userId)
+
+    return NextResponse.json({ analytics: { sent, opened, clicked, replied } })
 
   } catch (error) {
     console.error('Get analytics error:', error)
@@ -264,9 +236,9 @@ async function updateCampaignStatus(data: { instantlyId: string; status: string 
   try {
     const { instantlyId, status } = data
     const { error } = await supabaseAdmin
-      .from('campaigns')
+      .from(EMAIL_CAMPAIGNS_TABLE)
       .update({ status })
-      .eq('instantly_id', instantlyId)
+      .eq('id', instantlyId)
       .eq('user_id', userId)
 
     if (error) throw error
@@ -279,39 +251,18 @@ async function updateCampaignStatus(data: { instantlyId: string; status: string 
   }
 }
 
-async function listCampaigns(userId: string) {
+async function listCampaigns(userId: string, opts?: { limit?: number; offset?: number }) {
   try {
-    const response = await fetch(`${INSTANTLY_API_URL}/campaigns`, {
-      headers: {
-        'Authorization': `Bearer ${INSTANTLY_API_KEY}`
-      }
-    })
-
-    if (!response.ok) {
-      throw new Error('Failed to list campaigns')
-    }
-
-    const instantlyCampaigns = await response.json()
-
-    // Get our stored campaigns
     const { data: dbCampaigns, error } = await supabaseAdmin
-      .from('campaigns')
+      .from(EMAIL_CAMPAIGNS_TABLE)
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
+      .range(opts?.offset || 0, (opts?.offset || 0) + (opts?.limit || 20) - 1)
 
     if (error) throw error
 
-    // Merge data
-    const mergedCampaigns = dbCampaigns.map(dbCampaign => {
-      const instantlyData = instantlyCampaigns.find((ic: any) => ic.id === dbCampaign.instantly_id)
-      return {
-        ...dbCampaign,
-        instantlyData
-      }
-    })
-
-    return NextResponse.json({ campaigns: mergedCampaigns })
+    return NextResponse.json({ campaigns: dbCampaigns })
 
   } catch (error) {
     console.error('List campaigns error:', error)
@@ -321,34 +272,16 @@ async function listCampaigns(userId: string) {
 
 async function getCampaignDetails(campaignId: string, userId: string) {
   try {
-    const response = await fetch(`${INSTANTLY_API_URL}/campaigns/${campaignId}`, {
-      headers: {
-        'Authorization': `Bearer ${INSTANTLY_API_KEY}`
-      }
-    })
-
-    if (!response.ok) {
-      throw new Error('Failed to get campaign details')
-    }
-
-    const instantlyCampaign = await response.json()
-
-    // Get our stored campaign data
     const { data: dbCampaign, error } = await supabaseAdmin
-      .from('campaigns')
+      .from(EMAIL_CAMPAIGNS_TABLE)
       .select('*')
-      .eq('instantly_id', campaignId)
+      .eq('id', campaignId)
       .eq('user_id', userId)
       .single()
 
     if (error) throw error
 
-    return NextResponse.json({ 
-      campaign: {
-        ...dbCampaign,
-        instantlyData: instantlyCampaign
-      }
-    })
+    return NextResponse.json({ campaign: dbCampaign })
 
   } catch (error) {
     console.error('Get campaign details error:', error)

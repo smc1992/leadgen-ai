@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 
 // Mock database - in production replace with real database
 let knowledgeBases = [
@@ -11,13 +13,14 @@ let knowledgeBases = [
     documentCount: 12,
     size: 2450000,
     uploadedAt: "2024-01-15",
-    processedAt: "2024-01-15"
+    processedAt: "2024-01-15",
+    userId: "user1"
   }
 ]
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -25,7 +28,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const id = params.id
+    const { id } = await params
 
     if (!id) {
       return NextResponse.json({ error: 'Knowledge Base ID is required' }, { status: 400 })

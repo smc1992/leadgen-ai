@@ -10,6 +10,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    if (!supabaseAdmin) {
+      console.error('Supabase admin client not configured for deal-stages GET')
+      return NextResponse.json({ error: 'Service unavailable: Supabase not configured' }, { status: 503 })
+    }
+
     const { data: stages, error } = await supabaseAdmin
       .from('deal_stages')
       .select('*')
@@ -29,6 +34,11 @@ export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!supabaseAdmin) {
+      console.error('Supabase admin client not configured for deal-stages POST')
+      return NextResponse.json({ error: 'Service unavailable: Supabase not configured' }, { status: 503 })
     }
 
     // Check if user is admin or manager
@@ -77,6 +87,11 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    if (!supabaseAdmin) {
+      console.error('Supabase admin client not configured for deal-stages PUT')
+      return NextResponse.json({ error: 'Service unavailable: Supabase not configured' }, { status: 503 })
+    }
+
     // Check if user is admin or manager
     const { data: teamMember, error: teamError } = await supabaseAdmin
       .from('team_members')
@@ -122,6 +137,11 @@ export async function DELETE(request: NextRequest) {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!supabaseAdmin) {
+      console.error('Supabase admin client not configured for deal-stages DELETE')
+      return NextResponse.json({ error: 'Service unavailable: Supabase not configured' }, { status: 503 })
     }
 
     // Check if user is admin or manager

@@ -12,15 +12,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Missing parameters' }, { status: 400 })
     }
 
-    // Update email status to 'clicked'
     const { error: updateError } = await supabaseAdmin
-      .from('emails')
-      .update({
-        status: 'clicked',
-      })
+      .from('outreach_emails')
+      .update({ status: 'clicked', clicked_at: new Date().toISOString() })
       .eq('campaign_id', campaignId)
       .eq('lead_id', leadId)
-      .in('status', ['sent', 'opened']) // Update if sent or opened
+      .in('status', ['sent', 'opened'])
 
     if (!updateError) {
       // Increment campaign clicked count
@@ -29,13 +26,10 @@ export async function GET(request: NextRequest) {
         .select('clicked_count')
         .eq('id', campaignId)
         .single()
-
       if (campaign) {
         await supabaseAdmin
           .from('email_campaigns')
-          .update({
-            clicked_count: (campaign.clicked_count || 0) + 1,
-          })
+          .update({ clicked_count: (campaign.clicked_count || 0) + 1 })
           .eq('id', campaignId)
       }
     }

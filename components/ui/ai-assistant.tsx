@@ -20,6 +20,7 @@ import {
   Brain
 } from "lucide-react"
 import { toast } from "sonner"
+import { fetchWithCsrf } from '@/lib/client-fetch'
 
 interface Message {
   id: string
@@ -81,7 +82,7 @@ export function AIAssistant({
     setIsLoading(true)
 
     try {
-      const response = await fetch("/api/ai/chat", {
+      const response = await fetchWithCsrf("/api/ai/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

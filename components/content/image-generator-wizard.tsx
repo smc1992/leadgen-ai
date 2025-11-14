@@ -36,6 +36,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Image as ImageIcon, Upload, Sparkles, Download, Copy, RefreshCw, Check } from "lucide-react"
+import { fetchWithCsrf } from '@/lib/client-fetch'
 
 const imageGeneratorSchema = z.object({
   mode: z.enum(['generate', 'upload']),
@@ -211,7 +212,7 @@ export function ImageGeneratorWizard({ open, onOpenChange, onSave }: ImageGenera
         })
 
         // Step 1: Start generation (returns immediately)
-        const startResponse = await fetch('/api/content/generate-image-async', {
+        const startResponse = await fetchWithCsrf('/api/content/generate-image-async', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -246,7 +247,7 @@ export function ImageGeneratorWizard({ open, onOpenChange, onSave }: ImageGenera
         while (attempts < maxAttempts) {
           await new Promise(resolve => setTimeout(resolve, 2000))
 
-          const checkResponse = await fetch('/api/content/check-image-status', {
+          const checkResponse = await fetchWithCsrf('/api/content/check-image-status', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -318,7 +319,7 @@ export function ImageGeneratorWizard({ open, onOpenChange, onSave }: ImageGenera
         formData.append('file', uploadedFile)
 
         // Upload to your backend first
-        const uploadResponse = await fetch('/api/content/upload-temp', {
+        const uploadResponse = await fetchWithCsrf('/api/content/upload-temp', {
           method: 'POST',
           body: formData,
         })
@@ -330,7 +331,7 @@ export function ImageGeneratorWizard({ open, onOpenChange, onSave }: ImageGenera
         }
 
         // Then upload to Blotato CDN
-        const blotatoResponse = await fetch('/api/content/upload-to-blotato', {
+        const blotatoResponse = await fetchWithCsrf('/api/content/upload-to-blotato', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

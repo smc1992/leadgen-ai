@@ -19,6 +19,7 @@ import {
 import { useToast } from "@/components/ui/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { fetchWithCsrf } from '@/lib/client-fetch'
 
 interface SequenceStep {
   id: string
@@ -66,7 +67,7 @@ export function SequenceBuilder({ onSave, initialSequence }: SequenceBuilderProp
   const handleAIGenerate = async () => {
     setGenerating(true)
     try {
-      const response = await fetch('/api/ai/generate-sequence', {
+      const response = await fetchWithCsrf('/api/ai/generate-sequence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -167,7 +168,7 @@ export function SequenceBuilder({ onSave, initialSequence }: SequenceBuilderProp
         }))
       }
 
-      const response = await fetch('/api/outreach/sequences', {
+      const response = await fetchWithCsrf('/api/outreach/sequences', {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)

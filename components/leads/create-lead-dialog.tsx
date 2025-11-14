@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Loader2 } from "lucide-react"
+import { fetchWithCsrf } from '@/lib/client-fetch'
 
 const leadFormSchema = z.object({
   full_name: z.string().min(2, {
@@ -76,19 +77,38 @@ export function CreateLeadDialog({ open, onOpenChange }: CreateLeadDialogProps) 
 
   async function onSubmit(data: LeadFormValues) {
     setIsSubmitting(true)
-    
-    // Simuliere API Call
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    console.log("Lead data:", data)
-    
-    toast.success("Lead created successfully!", {
-      description: `${data.full_name} has been added to your database.`,
-    })
-    
-    setIsSubmitting(false)
-    form.reset()
-    onOpenChange(false)
+    try {
+      const payload = {
+        leads: [
+          {
+            full_name: data.full_name,
+            email: data.email,
+            job_title: data.job_title,
+            company: data.company,
+            region: data.region,
+            channel: data.channel
+          }
+        ]
+      }
+      const res = await fetchWithCsrf('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || 'Failed to create lead')
+      }
+      toast.success("Lead created successfully!", {
+        description: `${data.full_name} has been added to your database.`,
+      })
+      form.reset()
+      onOpenChange(false)
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to create lead')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (

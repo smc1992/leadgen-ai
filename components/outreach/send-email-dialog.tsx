@@ -85,7 +85,7 @@ export function SendEmailDialog({ open, onOpenChange, campaignId, templateId, on
 
     setSending(true)
     try {
-      const response = await fetch('/api/outreach/send', {
+      const response = await fetchWithCsrf('/api/outreach/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -204,3 +204,4 @@ export function SendEmailDialog({ open, onOpenChange, campaignId, templateId, on
     </Dialog>
   )
 }
+import { fetchWithCsrf } from '@/lib/client-fetch'

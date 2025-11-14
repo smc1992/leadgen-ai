@@ -22,6 +22,7 @@ import {
 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { useDropzone } from 'react-dropzone'
+import { fetchWithCsrf } from '@/lib/client-fetch'
 
 interface KnowledgeBase {
   id: string
@@ -101,7 +102,7 @@ export function KnowledgeBaseManager() {
       uploadFormData.append('name', formData.name)
       uploadFormData.append('description', formData.description)
 
-      const response = await fetch('/api/outreach/knowledge-base', {
+      const response = await fetchWithCsrf('/api/outreach/knowledge-base', {
         method: 'POST',
         body: uploadFormData
       })
@@ -133,7 +134,7 @@ export function KnowledgeBaseManager() {
     if (!confirm('Delete this knowledge base?')) return
 
     try {
-      const response = await fetch(`/api/outreach/knowledge-base?id=${id}`, {
+      const response = await fetchWithCsrf(`/api/outreach/knowledge-base?id=${id}`, {
         method: 'DELETE'
       })
 

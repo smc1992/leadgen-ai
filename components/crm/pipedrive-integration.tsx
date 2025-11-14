@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { fetchWithCsrf } from '@/lib/client-fetch'
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -13,7 +14,7 @@ import {
   Zap,
   ArrowRightLeft
 } from "lucide-react"
-import { useToast } from "@/components/ui/use-toast"
+import { toast } from "sonner"
 
 interface PipedriveIntegrationProps {
   dealId: string
@@ -30,7 +31,7 @@ export function PipedriveIntegration({ dealId }: PipedriveIntegrationProps) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
-  const { toast } = useToast()
+  // Use Sonner toast (Toaster is provided in app/layout)
 
   useEffect(() => {
     checkSyncStatus()
@@ -49,7 +50,7 @@ export function PipedriveIntegration({ dealId }: PipedriveIntegrationProps) {
   const syncToPipedrive = async () => {
     setSyncing(true)
     try {
-      const response = await fetch('/api/crm/pipedrive/sync', {
+      const response = await fetchWithCsrf('/api/crm/pipedrive/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -61,24 +62,13 @@ export function PipedriveIntegration({ dealId }: PipedriveIntegrationProps) {
       const data = await response.json()
 
       if (response.ok) {
-        toast({
-          title: "Sync Successful",
-          description: `Deal ${data.result.action} in Pipedrive`,
-        })
+        toast.success(`Sync Successful: Deal ${data?.result?.action ?? "updated"} in Pipedrive`)
         checkSyncStatus() // Refresh status
       } else {
-        toast({
-          title: "Sync Failed",
-          description: data.error || "Failed to sync with Pipedrive",
-          variant: "destructive"
-        })
+        toast.error(data?.error || "Failed to sync with Pipedrive")
       }
     } catch (error) {
-      toast({
-        title: "Sync Error",
-        description: "Failed to communicate with Pipedrive",
-        variant: "destructive"
-      })
+      toast.error("Sync Error: Failed to communicate with Pipedrive")
     } finally {
       setSyncing(false)
     }

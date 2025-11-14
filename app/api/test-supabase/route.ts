@@ -1,25 +1,18 @@
-import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { supabase, supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
 
 // Test function to check Supabase connection
 export async function testSupabaseConnection() {
   try {
-    console.log('Testing Supabase connection...')
-    
-    // Test basic connection
-    const { data, error } = await supabase
-      .from('email_templates')
-      .select('count')
-      .limit(1)
-    
-    if (error) {
-      console.error('Supabase connection error:', error)
-      return { success: false, error: error.message }
+    if (!isSupabaseConfigured || !supabaseAdmin) {
+      return {
+        success: false,
+        error: 'Supabase ist nicht konfiguriert',
+        configured: false
+      }
     }
     
-    console.log('✅ Supabase connection successful!')
-    
     // Test if tables exist
-    const tables = ['email_templates', 'email_sequences', 'email_campaigns', 'knowledge_bases']
+    const tables = ['email_templates', 'email_sequences', 'email_campaigns', 'knowledge_bases', 'lead_lists', 'lead_list_items', 'leads']
     const results = {}
     
     for (const table of tables) {
@@ -47,13 +40,14 @@ export async function testSupabaseConnection() {
     
     return {
       success: true,
+      configured: true,
       tables: results,
       storage: bucketResults
     }
     
   } catch (error) {
     console.error('Test failed:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: (error as any)?.message || 'Unknown error' }
   }
 }
 

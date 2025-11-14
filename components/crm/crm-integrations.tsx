@@ -16,7 +16,7 @@ import {
   Link as LinkIcon,
   Unlink
 } from "lucide-react"
-import { useToast } from "@/components/ui/use-toast"
+import { toast } from "sonner"
 
 interface CRMStatus {
   pipedrive: {
@@ -41,7 +41,7 @@ export function CRMIntegrations() {
   const [loading, setLoading] = useState(true)
   const [setupMode, setSetupMode] = useState<string | null>(null)
   const [apiToken, setApiToken] = useState("")
-  const { toast } = useToast()
+  // Using Sonner toast (provider is present in app/layout)
 
   useEffect(() => {
     checkCRMStatus()
@@ -69,11 +69,7 @@ export function CRMIntegrations() {
 
   const setupPipedrive = async () => {
     if (!apiToken.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter your Pipedrive API token",
-        variant: "destructive"
-      })
+      toast.error("Please enter your Pipedrive API token")
       return
     }
 
@@ -90,36 +86,22 @@ export function CRMIntegrations() {
       const data = await response.json()
 
       if (response.ok) {
-        toast({
-          title: "Success!",
-          description: "Pipedrive connected successfully",
-        })
+        toast.success("Pipedrive connected successfully")
         setSetupMode(null)
         setApiToken("")
         checkCRMStatus()
       } else {
-        toast({
-          title: "Connection Failed",
-          description: data.message || "Invalid API token",
-          variant: "destructive"
-        })
+        toast.error(data?.message || data?.error || "Connection failed")
       }
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to connect to Pipedrive",
-        variant: "destructive"
-      })
+      toast.error("Failed to connect to Pipedrive")
     }
   }
 
   const disconnectPipedrive = async () => {
     // In a real implementation, you'd remove the API token from environment
     // For now, we'll just update the UI
-    toast({
-      title: "Disconnected",
-      description: "Pipedrive integration has been disabled",
-    })
+    toast("Disconnected", { description: "Pipedrive integration has been disabled" })
     setCrmStatus(prev => ({
       ...prev,
       pipedrive: { configured: false, connected: false }

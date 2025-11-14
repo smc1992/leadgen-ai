@@ -25,6 +25,7 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 
 const menuItems = [
   {
@@ -51,6 +52,11 @@ const menuItems = [
         icon: Users,
       },
       {
+        title: "Scraper",
+        url: "/dashboard/leads/scraper",
+        icon: ChevronRight,
+      },
+      {
         title: "Outreach",
         url: "/dashboard/outreach",
         icon: Mail,
@@ -75,9 +81,10 @@ const menuItems = [
 ]
 
 export function AppSidebar() {
+  const pathname = usePathname()
   return (
     <Sidebar>
-      <SidebarHeader className="border-b px-6 py-4">
+      <SidebarHeader className="border-b px-6 py-4 bg-gradient-to-r from-primary/10 to-transparent">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <span className="text-lg font-bold">E</span>
@@ -97,7 +104,7 @@ export function AppSidebar() {
                 {group.items.map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton asChild>
-                      <Link href={item.url}>
+                      <Link href={item.url} className={`${pathname.startsWith(item.url) ? 'bg-muted text-foreground rounded-md' : ''} flex items-center gap-2`}>
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
                       </Link>

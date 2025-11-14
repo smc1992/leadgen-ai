@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { supabaseAdmin } from '@/lib/supabase'
+import { enforceGuards } from '@/lib/security'
+import { PipedriveConfigSchema } from '@/lib/validation'
 
 // Pipedrive API Base URL
 const PIPEDRIVE_API_BASE = 'https://api.pipedrive.com/v1'
@@ -9,6 +11,9 @@ const PIPEDRIVE_API_BASE = 'https://api.pipedrive.com/v1'
 // Get Pipedrive configuration
 export async function GET(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown'
+    const guard = enforceGuards(request, `pipedrive-config:${ip}`, 30, 60_000)
+    if (guard) return guard
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -65,6 +70,9 @@ export async function GET(request: NextRequest) {
 // Update Pipedrive configuration
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown'
+    const guard = enforceGuards(request, `pipedrive-config:${ip}`, 10, 60_000)
+    if (guard) return guard
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -82,7 +90,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { api_token, company_domain, setup_webhooks } = body
+    const parsed = PipedriveConfigSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid input' }, { status: 400 })
+    }
+    const { api_token, company_domain, setup_webhooks } = parsed.data
 
     if (!api_token) {
       return NextResponse.json({ error: 'API token is required' }, { status: 400 })

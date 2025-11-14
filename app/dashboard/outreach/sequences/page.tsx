@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,8 +11,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { Clock, Plus, Edit, Trash2, Play, Pause, Copy, Mail, Calendar, Users, BarChart3 } from "lucide-react"
+import { Clock, Plus, Edit, Trash2, Play, Pause, Copy, Mail, Calendar, Users, BarChart3, Activity } from "lucide-react"
 import { toast } from "sonner"
+import { Progress } from "@/components/ui/progress"
 
 // Mock sequences data
 const mockSequences = [
@@ -105,7 +106,7 @@ const mockSequences = [
 ]
 
 export default function SequencesPage() {
-  const [sequences, setSequences] = useState(mockSequences)
+  const [sequences, setSequences] = useState<any[]>(mockSequences)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [selectedSequence, setSelectedSequence] = useState<any>(null)
@@ -114,6 +115,30 @@ export default function SequencesPage() {
     description: "",
     status: "draft"
   })
+  const [loading, setLoading] = useState(true)
+  const [analytics, setAnalytics] = useState<Record<string, { sent: number; opened: number; clicked: number }>>({})
+
+  useEffect(() => {
+    const fetchSequences = async () => {
+      try {
+        const res = await fetch('/api/outreach/sequences')
+        if (res.ok) {
+          const data = await res.json()
+          setSequences(Array.isArray(data.sequences) ? data.sequences : [])
+        }
+        const ra = await fetch('/api/outreach/sequences/analytics')
+        if (ra.ok) {
+          const data = await ra.json()
+          setAnalytics(data.byTemplate || {})
+        }
+      } catch (e) {
+        // keep mock
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchSequences()
+  }, [])
 
   const handleCreateSequence = () => {
     if (!newSequence.name) {
@@ -239,8 +264,63 @@ export default function SequencesPage() {
         </Dialog>
       </div>
 
+      {/* Analytics */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Sequences</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{sequences.length}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Enrolled Leads</CardTitle>
+            <Mail className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {sequences.reduce((acc, s: any) => acc + (s.enrolled_leads ?? s.enrolledLeads ?? 0), 0)}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Avg Completion</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {(() => {
+                const vals = sequences.map((s: any) => s.completion_rate ?? s.completionRate ?? 0)
+                const avg = vals.length ? vals.reduce((a: number,b: number)=>a+b,0) / vals.length : 0
+                return `${avg.toFixed(1)}%`
+              })()}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active vs Paused</CardTitle>
+            <BarChart3 className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-sm">
+              Active: {sequences.filter((s: any) => (s.status || '').toLowerCase() === 'active').length}
+              <span className="mx-2">|</span>
+              Paused: {sequences.filter((s: any) => (s.status || '').toLowerCase() === 'paused').length}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8">Loading sequences...</div>
+      ) : (
       <div className="grid gap-6">
-        {sequences.map((sequence) => (
+        {sequences.map((sequence: any) => (
           <Card key={sequence.id}>
             <CardHeader>
               <div className="flex items-start justify-between">
@@ -281,21 +361,21 @@ export default function SequencesPage() {
                     <Users className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <span className="text-muted-foreground">Enrolled:</span>
-                      <div className="font-medium">{sequence.enrolledLeads} leads</div>
+                      <div className="font-medium">{sequence.enrolled_leads ?? sequence.enrolledLeads ?? 0} leads</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <BarChart3 className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <span className="text-muted-foreground">Completion:</span>
-                      <div className="font-medium">{sequence.completionRate}%</div>
+                      <div className="font-medium">{(sequence.completion_rate ?? sequence.completionRate ?? 0)}%</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <span className="text-muted-foreground">Created:</span>
-                      <div className="font-medium">{sequence.createdAt}</div>
+                      <div className="font-medium">{sequence.createdAt || new Date().toISOString().split('T')[0]}</div>
                     </div>
                   </div>
                 </div>
@@ -304,7 +384,7 @@ export default function SequencesPage() {
                 <div>
                   <Label className="text-sm font-medium">Sequence Steps ({sequence.steps.length})</Label>
                   <div className="mt-2 space-y-2">
-                    {sequence.steps.map((step: any, index: number) => (
+                    {(sequence.steps || []).map((step: any, index: number) => (
                       <div key={step.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                         <div className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
                           {index + 1}
@@ -320,6 +400,35 @@ export default function SequencesPage() {
                           <Mail className="h-3 w-3 mr-1" />
                           {step.type}
                         </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Template Metrics (aggregated) */}
+                <div>
+                  <Label className="text-sm font-medium">Template Metrics</Label>
+                  <div className="mt-2 grid md:grid-cols-2 gap-3">
+                    {Object.entries(analytics).slice(0,4).map(([tid, m]) => (
+                      <div key={tid} className="rounded border p-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Template</span>
+                          <span className="font-medium">{tid}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mt-2">
+                          <div>
+                            <span className="text-muted-foreground">Sent</span>
+                            <div className="font-medium">{m.sent}</div>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Opened</span>
+                            <div className="font-medium">{m.opened}</div>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Clicked</span>
+                            <div className="font-medium">{m.clicked}</div>
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -345,9 +454,10 @@ export default function SequencesPage() {
           </Card>
         ))}
       </div>
+      )}
 
       {/* Empty State */}
-      {sequences.length === 0 && (
+      {!loading && sequences.length === 0 && (
         <Card>
           <CardContent className="text-center py-8">
             <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />

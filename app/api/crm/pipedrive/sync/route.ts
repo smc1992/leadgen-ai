@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { supabaseAdmin } from '@/lib/supabase'
+import { enforceGuards } from '@/lib/security'
+import { PipedriveSyncSchema } from '@/lib/validation'
+import { fetchWithRetry } from '@/lib/http'
+import crypto from 'crypto'
 
 // Pipedrive API Base URL
 const PIPEDRIVE_API_BASE = 'https://api.pipedrive.com/v1'
@@ -43,32 +47,33 @@ async function getPipedriveConfig(userId: string): Promise<PipedriveConfig | nul
 // Make authenticated request to Pipedrive API
 async function pipedriveRequest(endpoint: string, config: PipedriveConfig, options: RequestInit = {}) {
   const url = `${PIPEDRIVE_API_BASE}${endpoint}?api_token=${config.api_token}`
-
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     headers: {
       'Content-Type': 'application/json',
       ...options.headers
     },
     ...options
-  })
-
-  if (!response.ok) {
-    throw new Error(`Pipedrive API error: ${response.status} ${response.statusText}`)
-  }
-
+  }, 3, 700)
   return response.json()
 }
 
 // Sync deal to Pipedrive
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown'
+    const guard = enforceGuards(request, `pipedrive-sync:${ip}`, 10, 60_000)
+    if (guard) return guard
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const body = await request.json()
-    const { dealId, syncDirection = 'to_pipedrive' } = body
+    const parsed = PipedriveSyncSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid input' }, { status: 400 })
+    }
+    const { dealId, syncDirection = 'to_pipedrive' } = parsed.data
 
     if (!dealId) {
       return NextResponse.json({ error: 'Deal ID is required' }, { status: 400 })
@@ -233,6 +238,22 @@ async function syncDealToPipedrive(deal: any, config: PipedriveConfig) {
       probability: deal.deal_stages?.probability || 0
     }
 
+    // Idempotenz: Request-Hash prüfen
+    const reqHash = crypto.createHash('sha256').update(JSON.stringify({ dealId: deal.id, dealData })).digest('hex')
+    const { data: existingActivity } = await supabaseAdmin
+      .from('deal_activities')
+      .select('id')
+      .eq('deal_id', deal.id)
+      .eq('metadata->>request_hash', reqHash)
+      .limit(1)
+    if (existingActivity && existingActivity.length > 0) {
+      return {
+        pipedrive_deal_id: deal.custom_fields?.pipedrive_id,
+        action: 'idempotent_skip',
+        deal_url: deal.custom_fields?.pipedrive_id ? `https://app.pipedrive.com/deal/${deal.custom_fields.pipedrive_id}` : null
+      }
+    }
+
     // Check if deal already exists in Pipedrive (by title or custom field)
     const searchResult = await pipedriveRequest('/deals/search', config, {
       method: 'GET'
@@ -267,6 +288,16 @@ async function syncDealToPipedrive(deal: any, config: PipedriveConfig) {
         }
       })
       .eq('id', deal.id)
+
+    // Log idempotency key
+    await supabaseAdmin.from('deal_activities').insert({
+      deal_id: deal.id,
+      user_id: null,
+      activity_type: 'crm_sync',
+      description: 'Pipedrive sync',
+      metadata: { request_hash: reqHash, action: existingDeal ? 'updated' : 'created' },
+      created_at: new Date().toISOString()
+    })
 
     return {
       pipedrive_deal_id: pipedriveDeal.data.id,
@@ -343,6 +374,9 @@ async function syncDealFromPipedrive(dealId: string, config: PipedriveConfig) {
 // Get sync status and available actions
 export async function GET(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown'
+    const guard = enforceGuards(request, `pipedrive-status:${ip}`, 30, 60_000)
+    if (guard) return guard
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

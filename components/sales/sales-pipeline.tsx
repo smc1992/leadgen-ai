@@ -37,6 +37,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { fetchWithCsrf } from '@/lib/client-fetch'
 
 interface Deal {
   id: string
@@ -102,7 +103,7 @@ export function SalesPipeline() {
       // If no stages exist, try to set them up
       if (!stagesData.stages || stagesData.stages.length === 0) {
         console.log('No deal stages found, setting up defaults...')
-        const setupResponse = await fetch('/api/setup/deal-stages', {
+        const setupResponse = await fetchWithCsrf('/api/setup/deal-stages', {
           method: 'POST'
         })
 
@@ -129,7 +130,7 @@ export function SalesPipeline() {
 
   const handleDealMove = async (dealId: string, newStageId: string) => {
     try {
-      const response = await fetch('/api/sales/deals', {
+      const response = await fetchWithCsrf('/api/sales/deals', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: dealId, stage_id: newStageId })
@@ -202,7 +203,7 @@ export function SalesPipeline() {
         stage_id: stages[0]?.id // Start with first stage (Discovery)
       }
 
-      const response = await fetch('/api/sales/deals', {
+      const response = await fetchWithCsrf('/api/sales/deals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(dealPayload)

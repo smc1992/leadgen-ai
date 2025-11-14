@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 
 // Mock database - in production replace with real database
 let templates = [
@@ -17,7 +19,7 @@ let templates = [
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -25,7 +27,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const id = params.id
+    const { id } = await params
     const body = await request.json()
     const { name, subject, content, category } = body
 
@@ -62,7 +64,7 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -70,7 +72,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const id = params.id
+    const { id } = await params
 
     if (!id) {
       return NextResponse.json({ error: 'Template ID is required' }, { status: 400 })

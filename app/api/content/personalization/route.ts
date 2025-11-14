@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
 }
 
 function matchesConditions(lead: any, leadScore: any, conditions: any): boolean {
-  for (const [key, value] of Object.entries(conditions)) {
+  for (const [key, value] of Object.entries(conditions as Record<string, any>)) {
     switch (key) {
       case 'company_size':
         if (Array.isArray(value) && !value.includes(lead.company_size)) return false

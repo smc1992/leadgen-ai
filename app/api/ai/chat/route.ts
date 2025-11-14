@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { supabaseAdmin } from '@/lib/supabase'
-import { getOpenAIClient } from '@/lib/openai'
+import { chat as llmChat } from '@/lib/llm'
+import { config } from '@/lib/config'
+import { enforceGuards } from '@/lib/security'
+import { AiChatSchema } from '@/lib/validation'
 
 // System prompts for different contexts
 const SYSTEM_PROMPTS = {
@@ -57,12 +60,20 @@ Provide step-by-step guidance and troubleshooting help.`
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown'
+    const guard = enforceGuards(request, `ai-chat-post:${ip}`, 30, 60_000)
+    if (guard) return guard
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { message, context = 'general', conversationHistory = [] } = await request.json()
+    const body = await request.json()
+    const parsed = AiChatSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid input' }, { status: 400 })
+    }
+    const { message, context = 'general', conversationHistory = [] } = parsed.data
 
     if (!message || typeof message !== 'string') {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 })
@@ -82,19 +93,7 @@ export async function POST(request: NextRequest) {
     ]
 
     // Call OpenAI API
-    const client = getOpenAIClient()
-    const completion = await client.chat.completions.create({
-      model: 'gpt-4o',
-      messages,
-      max_tokens: 1000,
-      temperature: 0.7,
-      top_p: 1,
-      frequency_penalty: 0,
-      presence_penalty: 0,
-      stream: false
-    })
-
-    const aiResponse = completion.choices[0]?.message?.content
+    const aiResponse = await llmChat(messages, 1000)
     if (!aiResponse) {
       throw new Error('No response from OpenAI')
     }
@@ -106,7 +105,7 @@ export async function POST(request: NextRequest) {
       response: aiResponse,
       context,
       timestamp: new Date().toISOString(),
-      usage: completion.usage
+      usage: undefined
     })
 
   } catch (error) {
@@ -134,6 +133,9 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown'
+    const guard = enforceGuards(request, `ai-chat-get:${ip}`, 60, 60_000)
+    if (guard) return guard
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

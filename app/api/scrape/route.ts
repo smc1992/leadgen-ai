@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { supabaseAdmin } from '@/lib/supabase'
+import { enforceGuards } from '@/lib/security'
+import { ScrapeSchema } from '@/lib/validation'
 
 // Apify API configuration
 const APIFY_API_URL = 'https://api.apify.com/v2'
@@ -43,13 +48,25 @@ interface ScrapedLead {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown'
+    const guard = enforceGuards(request, `scrape-post:${ip}`, 10, 60_000)
+    if (guard) return guard
+
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     if (!APIFY_TOKEN) {
       console.error('Apify token missing. Set APIFY_TOKEN in environment.')
       return NextResponse.json({ error: 'Service unavailable: Apify not configured' }, { status: 503 })
     }
 
     const body = await request.json()
-    const { type, params } = body
+    const parsed = ScrapeSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid input' }, { status: 400 })
+    }
+    const { type, params } = parsed.data
 
     if (!type || !params) {
       return NextResponse.json({ 
@@ -62,12 +79,25 @@ export async function POST(request: NextRequest) {
 
     switch (type) {
       case 'linkedin':
-        actorId = process.env.APIFY_ACTOR_ID_LINKEDIN || 'supreme_coder/linkedin-profile-scraper'
-        runInput = {
-          startUrls: [{ url: params.profileUrl }],
-          resultsPerPage: params.limit || 50,
-          shouldEnrichEmails: true,
-          proxyConfiguration: { useApifyProxy: true }
+        {
+          const cookie = process.env.APIFY_LINKEDIN_COOKIE
+          if (params.searchUrl) {
+            actorId = process.env.APIFY_ACTOR_ID_LINKEDIN_SEARCH || 'curious_coder/linkedin-people-search-scraper'
+            runInput = {
+              searchUrl: params.searchUrl,
+              startPage: params.startPage || 1,
+              endPage: params.endPage || 1,
+              ...(cookie ? { linkedinCookies: cookie } : {}),
+              proxyConfiguration: { useApifyProxy: true }
+            }
+          } else {
+            actorId = process.env.APIFY_ACTOR_ID_LINKEDIN || 'apimaestro/linkedin-profile-batch-scraper-no-cookies-required'
+            runInput = {
+              profileUrls: [params.profileUrl],
+              ...(cookie ? { linkedinCookies: cookie } : {}),
+              proxyConfiguration: { useApifyProxy: true }
+            }
+          }
         }
         break
 
@@ -146,6 +176,19 @@ export async function POST(request: NextRequest) {
         ? 502 // Upstream auth failure
         : (upstreamStatus >= 500 ? 502 : 400)
       console.error('Apify run start failed:', upstreamStatus, upstreamText)
+      try {
+        await supabaseAdmin
+          .from('scrape_runs')
+          .insert({
+            id: `err_${Date.now()}`,
+            type,
+            status: 'failed',
+            result_count: 0,
+            triggered_by: session.user.id,
+            created_at: new Date().toISOString(),
+            error_message: upstreamText?.slice(0, 500) || `status ${upstreamStatus}`
+          })
+      } catch {}
       return NextResponse.json({
         error: 'Apify run start failed',
         apifyStatus: upstreamStatus,
@@ -155,22 +198,26 @@ export async function POST(request: NextRequest) {
 
     const runData: ApifyRunResponse = await runResponse.json()
 
-    // Store run information in database
-    const scrapeRun = {
-      id: runData.data.id,
-      type,
-      status: 'running',
-      resultCount: 0,
-      triggeredBy: 'user',
-      params,
-      createdAt: new Date().toISOString()
+    // Persist run in Supabase
+    try {
+      await supabaseAdmin
+        .from('scrape_runs')
+        .insert({
+          id: runData.data.id,
+          type,
+          status: runData.data.status.toLowerCase(),
+          result_count: 0,
+          triggered_by: session.user.id,
+          created_at: new Date().toISOString()
+        })
+    } catch (e) {
+      console.error('Failed to insert scrape_runs:', e)
     }
 
     return NextResponse.json({ 
       success: true,
       runId: runData.data.id,
-      status: runData.data.status,
-      scrapeRun
+      status: runData.data.status
     }, { status: 201 })
 
   } catch (error) {
@@ -183,6 +230,14 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown'
+    const guard = enforceGuards(request, `scrape-get:${ip}`, 30, 60_000)
+    if (guard) return guard
+
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     if (!APIFY_TOKEN) {
       console.error('Apify token missing. Set APIFY_TOKEN in environment.')
       return NextResponse.json({ error: 'Service unavailable: Apify not configured' }, { status: 503 })
@@ -274,6 +329,43 @@ export async function GET(request: NextRequest) {
           }
         }
       }
+
+      // Persist status and optionally insert leads
+      try {
+        await supabaseAdmin
+          .from('scrape_runs')
+          .update({
+            status: 'succeeded',
+            result_count: results.length,
+          })
+          .eq('id', runId)
+      } catch (e) {
+        console.error('Failed to update scrape_runs:', e)
+      }
+
+      if (Array.isArray(results) && results.length) {
+        const leadsToInsert = results.slice(0, 500).map(r => ({
+          user_id: session.user.id,
+          full_name: r.fullName || '',
+          job_title: r.jobTitle || null,
+          company: r.company || null,
+          email: r.email || null,
+          email_status: r.email ? 'valid' : 'unknown',
+          score: 0,
+          region: r.region || null,
+          channel: r.channel || 'unknown',
+          source_url: r.sourceUrl || null,
+          is_outreach_ready: false,
+          created_at: new Date().toISOString()
+        }))
+        try {
+          await supabaseAdmin
+            .from('leads')
+            .insert(leadsToInsert)
+        } catch (e) {
+          console.error('Failed to insert leads from scrape:', e)
+        }
+      }
     }
 
     return NextResponse.json({
@@ -301,7 +393,9 @@ function transformScrapedData(item: any, actorId: string): ScrapedLead {
     typeof item?.firstName === 'string' ||
     typeof item?.lastName === 'string' ||
     typeof item?.jobTitle === 'string' ||
-    typeof item?.companyName === 'string'
+    typeof item?.companyName === 'string' ||
+    typeof item?.basic_info?.fullname === 'string' ||
+    typeof item?.basic_info?.profile_url === 'string'
   )
 
   const looksLikeMaps = (
@@ -323,15 +417,16 @@ function transformScrapedData(item: any, actorId: string): ScrapedLead {
   )
 
   // Prefer explicit actor names, but rely on shape detection when actId is opaque
-  if (actorKey === 'supreme_coder/linkedin-profile-scraper' || looksLikeLinkedIn) {
+  if (actorKey.includes('linkedin') || looksLikeLinkedIn) {
+    const bi = item.basic_info || {}
     return {
-      fullName: `${item.firstName || ''} ${item.lastName || ''}`.trim(),
-      jobTitle: item.jobTitle || '',
-      company: item.companyName || '',
+      fullName: `${item.firstName || ''} ${item.lastName || ''}`.trim() || bi.fullname || '',
+      jobTitle: item.jobTitle || bi.headline || '',
+      company: item.companyName || bi.current_company || '',
       email: item.email,
-      region: item.locationCountry || '',
+      region: item.location || bi?.location?.country || '',
       channel: 'linkedin',
-      sourceUrl: item.url || ''
+      sourceUrl: item.url || item.profileUrl || bi.profile_url || ''
     }
   }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { supabaseAdmin } from '@/lib/supabase'
+import { executeWorkflowSteps } from '@/lib/workflows'
 
 export async function GET(request: NextRequest) {
   try {
@@ -186,7 +187,6 @@ export async function POST(request: NextRequest) {
       const { data: existingWeb, error: exWebErr } = await supabaseAdmin
         .from('leads')
         .select('id, website_url, company, city')
-        .eq('user_id', session.user.id)
         .in('website_url', websites)
       if (exWebErr) throw exWebErr
       existingByWebsite = existingWeb || []
@@ -197,7 +197,6 @@ export async function POST(request: NextRequest) {
       const { data: existingComp, error: exCompErr } = await supabaseAdmin
         .from('leads')
         .select('id, website_url, company, city')
-        .eq('user_id', session.user.id)
         .in('company', companies)
       if (exCompErr) throw exCompErr
       existingByCompany = existingComp || []
@@ -217,6 +216,7 @@ export async function POST(request: NextRequest) {
     // Process and score leads (including enriched fields)
     const nowIso = new Date().toISOString()
     const processedLeads = uniqueLeads.map((lead: any) => ({
+      user_id: session.user.id,
       full_name: lead.full_name || lead.fullName || '',
       job_title: lead.job_title || lead.jobTitle || '',
       company: lead.company || '',
@@ -236,7 +236,6 @@ export async function POST(request: NextRequest) {
       rating_avg: lead.rating_avg ?? lead.ratingAvg ?? null,
       rating_count: lead.rating_count ?? lead.ratingCount ?? null,
       categories: lead.categories ?? null,
-      user_id: session.user.id,
       score: calculateLeadScore(lead),
       is_outreach_ready: false,
       created_at: nowIso,
@@ -296,6 +295,20 @@ export async function POST(request: NextRequest) {
       const { error: itemsErr } = await supabaseAdmin.from('lead_list_items').insert(items)
       if (itemsErr) throw itemsErr
     }
+
+    try {
+      const { data: workflows } = await supabaseAdmin
+        .from('workflows')
+        .select('*')
+        .eq('is_active', true)
+        .eq('trigger_type', 'lead_created')
+        .eq('user_id', session.user.id)
+      for (const wf of workflows || []) {
+        for (const l of insertedLeads || []) {
+          await executeWorkflowSteps(wf, { lead: l })
+        }
+      }
+    } catch {}
 
     return NextResponse.json({ leads: insertedLeads, listId: targetListId }, { status: 201 })
   } catch (error) {

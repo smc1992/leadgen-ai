@@ -36,6 +36,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Loader2, Sparkles, Copy, RefreshCw, Check } from "lucide-react"
 import { Platform, getPlatformLimits } from "@/lib/blotato-api"
+import { fetchWithCsrf } from '@/lib/client-fetch'
 
 type Tone = 'professional' | 'casual' | 'friendly' | 'authoritative' | 'humorous' | 'inspirational'
 
@@ -111,7 +112,7 @@ export function TextGeneratorWizard({ open, onOpenChange, onSave }: TextGenerato
       }
 
       // Call API to generate and publish content
-      const response = await fetch('/api/content/generate-and-publish', {
+      const response = await fetchWithCsrf('/api/content/generate-and-publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

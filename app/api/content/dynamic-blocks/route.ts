@@ -113,7 +113,7 @@ function findBestVariant(block: any, lead: any) {
     let score = 0
 
     // Check targeting rules
-    for (const [ruleKey, ruleValue] of Object.entries(rules)) {
+    for (const [ruleKey, ruleValue] of Object.entries(rules as Record<string, any>)) {
       if (ruleKey === 'company_size' && lead.company_size === ruleValue) score += 10
       if (ruleKey === 'industry' && lead.industry?.toLowerCase().includes((ruleValue as string).toLowerCase())) score += 10
       if (ruleKey === 'lead_score') {

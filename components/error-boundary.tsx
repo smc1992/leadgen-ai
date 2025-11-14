@@ -1,6 +1,7 @@
 "use client"
 
 import { Component, ReactNode } from 'react'
+import * as Sentry from '@sentry/nextjs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, RefreshCw, Home, Bug } from 'lucide-react'
@@ -40,21 +41,16 @@ export class GlobalErrorBoundary extends Component<Props, State> {
   }
 
   reportError = (error: Error, errorInfo: any) => {
-    // In production, this would send to Sentry, LogRocket, etc.
     console.error('Global Error Boundary caught an error:', error, errorInfo)
-
-    // You can integrate with Sentry here
-    /*
-    import * as Sentry from '@sentry/nextjs'
-
-    Sentry.captureException(error, {
-      contexts: {
-        react: {
-          componentStack: errorInfo.componentStack
+    try {
+      Sentry.captureException(error, {
+        contexts: {
+          react: {
+            componentStack: errorInfo.componentStack
+          }
         }
-      }
-    })
-    */
+      })
+    } catch {}
   }
 
   handleRetry = () => {
@@ -289,20 +285,15 @@ export function AsyncErrorBoundary({ children, fallback }: { children: ReactNode
 
 // Utility function for error reporting
 export function reportError(error: Error, context?: any) {
-  // In production, send to error tracking service
   console.error('Reported error:', error, context)
-
-  // Sentry integration example
-  /*
-  import * as Sentry from '@sentry/nextjs'
-
-  Sentry.captureException(error, {
-    tags: {
-      component: 'error-handler'
-    },
-    extra: context
-  })
-  */
+  try {
+    Sentry.captureException(error, {
+      tags: {
+        component: 'error-handler'
+      },
+      extra: context
+    })
+  } catch {}
 }
 
 // Retry utility for failed API calls

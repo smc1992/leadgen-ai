@@ -10,6 +10,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    if (!supabaseAdmin) {
+      console.error('Supabase admin client not configured for setup/deal-stages POST')
+      return NextResponse.json({ error: 'Service unavailable: Supabase not configured' }, { status: 503 })
+    }
+
     // Check if deal stages already exist
     const { data: existingStages, error: checkError } = await supabaseAdmin
       .from('deal_stages')
@@ -88,6 +93,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Setup deal stages error:', error)
-    return NextResponse.json({ error: 'Failed to setup deal stages' }, { status: 500 })
+    const message = (error as any)?.message || 'Failed to setup deal stages'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

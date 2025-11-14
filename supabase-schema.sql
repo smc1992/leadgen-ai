@@ -398,6 +398,30 @@ CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_ai_type ON ai_usage_logs(ai_type);
 CREATE INDEX IF NOT EXISTS idx_ai_insights_user_id_type ON ai_insights(user_id, insight_type);
 CREATE INDEX IF NOT EXISTS idx_ai_insights_expires_at ON ai_insights(expires_at);
 
+-- Email Unsubscribes (Suppression List)
+CREATE TABLE IF NOT EXISTS email_unsubscribes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    lead_id UUID REFERENCES leads(id) ON DELETE SET NULL,
+    lead_email TEXT NOT NULL,
+    campaign_id UUID REFERENCES email_campaigns(id) ON DELETE SET NULL,
+    reason TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_unsub_user_email ON email_unsubscribes(user_id, lead_email);
+ALTER TABLE email_unsubscribes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "email_unsubscribes_select_own" ON email_unsubscribes;
+CREATE POLICY "email_unsubscribes_select_own"
+    ON email_unsubscribes FOR SELECT
+    TO authenticated
+    USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "email_unsubscribes_insert_own" ON email_unsubscribes;
+CREATE POLICY "email_unsubscribes_insert_own"
+    ON email_unsubscribes FOR INSERT
+    TO authenticated
+    WITH CHECK (user_id = auth.uid());
+
 -- Function to clean up expired insights
 CREATE OR REPLACE FUNCTION cleanup_expired_insights()
 RETURNS void AS $$

@@ -36,6 +36,8 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { ScrapeGoogleMapsDialog } from "@/components/leads/scrape-google-maps-dialog"
+import { fetchWithCsrf } from '@/lib/client-fetch'
+import { CreateLeadDialog } from '@/components/leads/create-lead-dialog'
 
 interface Lead {
   id: string
@@ -84,6 +86,11 @@ export function LeadsManagement({ className }: LeadsManagementProps) {
   const [editingLead, setEditingLead] = useState<Lead | null>(null)
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [importData, setImportData] = useState("")
+  const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([])
+  const [csvRows, setCsvRows] = useState<string[][]>([])
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({})
 
   useEffect(() => {
     fetchLeadLists()
@@ -148,7 +155,7 @@ export function LeadsManagement({ className }: LeadsManagementProps) {
 
   const handleDeleteLead = async (leadId: string) => {
     try {
-      const response = await fetch(`/api/leads/${leadId}`, {
+      const response = await fetchWithCsrf(`/api/leads/${leadId}`, {
         method: 'DELETE'
       })
       
@@ -165,7 +172,7 @@ export function LeadsManagement({ className }: LeadsManagementProps) {
 
   const handleUpdateLead = async (leadId: string, updates: Partial<Lead>) => {
     try {
-      const response = await fetch(`/api/leads/${leadId}`, {
+      const response = await fetchWithCsrf(`/api/leads/${leadId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
@@ -185,13 +192,25 @@ export function LeadsManagement({ className }: LeadsManagementProps) {
 
   const handleImportLeads = async () => {
     try {
-      const lines = importData.trim().split('\n').filter(line => line.trim())
-      const parsedLeads = lines.map(line => {
-        const [fullName, email, company, jobTitle] = line.split(',').map(s => s.trim())
-        return { fullName, email, company, jobTitle }
-      }).filter(lead => lead.fullName)
+      let parsedLeads: any[] = []
+      if (csvHeaders.length > 0 && csvRows.length > 0 && Object.keys(columnMapping).length > 0) {
+        parsedLeads = csvRows.map(r => {
+          const obj: any = {}
+          csvHeaders.forEach((h, i) => {
+            const target = columnMapping[h]
+            if (target) obj[target] = (r[i] || '').trim()
+          })
+          return obj
+        }).filter(l => (l.full_name || l.fullName))
+      } else {
+        const lines = importData.trim().split('\n').filter(line => line.trim())
+        parsedLeads = lines.map(line => {
+          const [fullName, email, company, jobTitle] = line.split(',').map(s => s.trim())
+          return { fullName, email, company, jobTitle }
+        }).filter(lead => lead.fullName)
+      }
 
-      const response = await fetch('/api/leads', {
+      const response = await fetchWithCsrf('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ leads: parsedLeads })
@@ -203,11 +222,74 @@ export function LeadsManagement({ className }: LeadsManagementProps) {
       setLeads(prev => [...importedLeads, ...prev])
       setShowImportDialog(false)
       setImportData("")
+      setCsvFile(null)
+      setCsvHeaders([])
+      setCsvRows([])
+      setColumnMapping({})
       toast.success(`Imported ${importedLeads.length} leads`)
     } catch (error) {
       toast.error("Failed to import leads")
       console.error('Import leads error:', error)
     }
+  }
+
+  const handleCsvFile = async (file: File) => {
+    const text = await file.text()
+    setImportData(text)
+    const { headers, rows } = parseCsv(text)
+    setCsvHeaders(headers)
+    setCsvRows(rows)
+  }
+
+  const validateSelectedEmails = async () => {
+    try {
+      const ids = selectedLeads.slice()
+      if (ids.length === 0) return
+      const res = await fetchWithCsrf('/api/leads/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadIds: ids })
+      })
+      if (!res.ok) throw new Error('Validation failed')
+      const json = await res.json()
+      const map: Record<string, string> = {}
+      for (const u of json.updates || []) {
+        map[u.id] = u.email_status
+      }
+      setLeads(prev => prev.map(l => map[l.id] ? { ...l, email_status: map[l.id] as any } : l))
+      toast.success(`Validated ${json.validated} emails`)
+    } catch (e) {
+      toast.error('Email validation failed')
+    }
+  }
+
+  const parseCsv = (text: string): { headers: string[], rows: string[][] } => {
+    const lines: string[] = []
+    let current = ''
+    let inQuote = false
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i]
+      if (c === '"') {
+        if (inQuote && text[i + 1] === '"') { current += '"'; i++ } else { inQuote = !inQuote }
+      } else if (c === '\n' && !inQuote) { lines.push(current); current = '' } else { current += c }
+    }
+    if (current.trim().length > 0) lines.push(current)
+    const rows = lines.map(line => {
+      const cols: string[] = []
+      let cell = ''
+      let q = false
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i]
+        if (ch === '"') {
+          if (q && line[i + 1] === '"') { cell += '"'; i++ } else { q = !q }
+        } else if (ch === ',' && !q) { cols.push(cell); cell = '' } else { cell += ch }
+      }
+      cols.push(cell)
+      return cols
+    })
+    const headers = rows.length > 0 ? rows[0].map(h => h.trim()) : []
+    const dataRows = rows.slice(1)
+    return { headers, rows: dataRows }
   }
 
   const getEmailStatusIcon = (status: string) => {
@@ -276,35 +358,167 @@ export function LeadsManagement({ className }: LeadsManagementProps) {
       {/* Filters and Actions */}
       <Card className="mb-6">
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Leads Management</CardTitle>
-              <CardDescription>Manage and analyze your lead database</CardDescription>
-            </div>
-            <div className="flex gap-2">
-              <ScrapeGoogleMapsDialog onImported={() => fetchLeads()} />
-              <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-                <DialogTrigger asChild>
-                  <Button variant="outline">
-                    <Upload className="h-4 w-4 mr-2" />
-                    Import
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Import Leads</DialogTitle>
-                    <DialogDescription>
-                      Paste CSV data (fullName, email, company, jobTitle)
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <Textarea
-                      placeholder="John Doe, john@example.com, Acme Corp, CEO
-Jane Smith, jane@example.com, Tech Inc, CTO"
-                      value={importData}
-                      onChange={(e) => setImportData(e.target.value)}
-                      rows={6}
-                    />
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Leads Management</CardTitle>
+                <CardDescription>Manage and analyze your lead database</CardDescription>
+              </div>
+              <div className="flex gap-2">
+                {/* AFAG/Messe Frankfurt Import */}
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="outline">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Import AFAG Exhibitors
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Import AFAG/Messe Frankfurt Exhibitors</DialogTitle>
+                      <DialogDescription>
+                        Gib die Ausstellerlisten-URL ein (z. B. eine Messe Frankfurt Exhibitor Directory Seite).
+                      </DialogDescription>
+                    </DialogHeader>
+                    <AFAGImportForm onImported={() => fetchLeads()} />
+                  </DialogContent>
+                </Dialog>
+                {/* Koelnmesse Import */}
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="outline">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Import Koelnmesse Exhibitors
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Import Koelnmesse Aussteller</DialogTitle>
+                      <DialogDescription>
+                        Liste-URL einer Koelnmesse-Veranstaltung angeben (Exhibitor Directory).
+                      </DialogDescription>
+                    </DialogHeader>
+                    <KoelnImportForm onImported={() => fetchLeads()} />
+                  </DialogContent>
+                </Dialog>
+                {/* Messe München Import */}
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="outline">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Import Messe München Exhibitors
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Import Messe München Aussteller</DialogTitle>
+                      <DialogDescription>
+                        Liste-URL einer Messe München Veranstaltung angeben (Exhibitordetails).
+                      </DialogDescription>
+                    </DialogHeader>
+                    <MuenchenImportForm onImported={() => fetchLeads()} />
+                  </DialogContent>
+                </Dialog>
+                {/* Messe Berlin Import */}
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="outline">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Import Messe Berlin Exhibitors
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Import Messe Berlin Aussteller</DialogTitle>
+                      <DialogDescription>
+                        Liste-URL einer Messe Berlin Veranstaltung angeben (z. B. mit /showfloor/organizations).
+                      </DialogDescription>
+                    </DialogHeader>
+                    <BerlinImportForm onImported={() => fetchLeads()} />
+                  </DialogContent>
+                </Dialog>
+                <ScrapeGoogleMapsDialog onImported={() => fetchLeads()} />
+                <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Import
+                    </Button>
+                  </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Import Leads</DialogTitle>
+                  <DialogDescription>
+                    Paste CSV data und optional Spalten zuordnen
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Input type="file" accept=".csv" onChange={(e) => { const f = e.target.files?.[0]; if (f) { setCsvFile(f); handleCsvFile(f) } }} />
+                  </div>
+                  <Textarea
+                    placeholder="full_name,email,company,job_title\nJohn Doe,john@example.com,Acme Corp,CEO\nJane Smith,jane@example.com,Tech Inc,CTO"
+                    value={importData}
+                    onChange={(e) => setImportData(e.target.value)}
+                    rows={6}
+                  />
+                    <div className="flex justify-between items-center">
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          const { headers, rows } = parseCsv(importData)
+                          setCsvHeaders(headers)
+                          setCsvRows(rows)
+                          const defaultMap: Record<string, string> = {}
+                          headers.forEach(h => {
+                            const key = h.trim().toLowerCase()
+                            if (key.includes('name')) defaultMap[h] = 'full_name'
+                            else if (key.includes('email')) defaultMap[h] = 'email'
+                            else if (key.includes('company')) defaultMap[h] = 'company'
+                            else if (key.includes('title') || key.includes('role')) defaultMap[h] = 'job_title'
+                            else if (key.includes('region') || key.includes('country')) defaultMap[h] = 'region'
+                            else if (key.includes('channel')) defaultMap[h] = 'channel'
+                            else if (key.includes('website')) defaultMap[h] = 'website_url'
+                            else if (key.includes('phone')) defaultMap[h] = 'phone'
+                          })
+                          setColumnMapping(defaultMap)
+                        }}
+                      >
+                        Erkenne Spalten
+                      </Button>
+                      <div className="text-sm text-muted-foreground">
+                        {csvHeaders.length > 0 ? `${csvHeaders.length} Spalten erkannt` : ''}
+                      </div>
+                    </div>
+                    {csvHeaders.length > 0 && (
+                      <div className="space-y-3">
+                        {csvHeaders.map(h => (
+                          <div key={h} className="grid grid-cols-2 gap-2 items-center">
+                            <Label>{h}</Label>
+                            <Select value={columnMapping[h] || ''} onValueChange={(val) => setColumnMapping(prev => ({ ...prev, [h]: val }))}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Zuordnung" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">Ignorieren</SelectItem>
+                                <SelectItem value="full_name">Full Name</SelectItem>
+                                <SelectItem value="email">Email</SelectItem>
+                                <SelectItem value="company">Company</SelectItem>
+                                <SelectItem value="job_title">Job Title</SelectItem>
+                                <SelectItem value="region">Region</SelectItem>
+                                <SelectItem value="channel">Channel</SelectItem>
+                                <SelectItem value="website_url">Website</SelectItem>
+                                <SelectItem value="phone">Phone</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                        {csvRows.length > 0 && (
+                          <div className="text-xs text-muted-foreground">
+                            {`Vorschau: ${Math.min(csvRows.length, 3)} Zeilen angezeigt`}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div className="flex justify-end gap-2">
                       <Button variant="outline" onClick={() => setShowImportDialog(false)}>
                         Cancel
@@ -316,6 +530,18 @@ Jane Smith, jane@example.com, Tech Inc, CTO"
                   </div>
                 </DialogContent>
               </Dialog>
+              <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Lead
+                  </Button>
+                </DialogTrigger>
+                <CreateLeadDialog open={createOpen} onOpenChange={setCreateOpen} />
+              </Dialog>
+              <Button variant="outline" onClick={validateSelectedEmails} disabled={selectedLeads.length === 0}>
+                Validate Emails
+              </Button>
               <Button variant="outline">
                 <Download className="h-4 w-4 mr-2" />
                 Export
@@ -623,6 +849,250 @@ Jane Smith, jane@example.com, Tech Inc, CTO"
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+function AFAGImportForm({ onImported }: { onImported: () => void }) {
+  const [listUrl, setListUrl] = useState("")
+  const [limit, setLimit] = useState<string>("")
+  const [loading, setLoading] = useState(false)
+
+  const handleImport = async () => {
+    try {
+      setLoading(true)
+      const payload: any = { listUrl: listUrl.trim() }
+      const n = parseInt(limit)
+      if (!isNaN(n) && n > 0) payload.limit = n
+
+      const res = await fetchWithCsrf('/api/leads/scrapers/afag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || 'Import failed')
+      }
+      const data = await res.json()
+      toast.success(`Importiert: ${data.imported || 0} Leads`)
+      onImported()
+    } catch (error: any) {
+      toast.error(error?.message || 'Import fehlgeschlagen')
+      console.error('AFAG import error:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label>Ausstellerlisten-URL *</Label>
+        <Input
+          placeholder="https://ambiente.messefrankfurt.com/.../exhibitor-search.list.html"
+          value={listUrl}
+          onChange={(e) => setListUrl(e.target.value)}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label>Limit (optional, nur zum Testen)</Label>
+        <Input
+          placeholder="z. B. 20"
+          value={limit}
+          onChange={(e) => setLimit(e.target.value)}
+        />
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => { setListUrl(''); setLimit('') }} disabled={loading}>Zurücksetzen</Button>
+        <Button onClick={handleImport} disabled={loading || !listUrl.trim()}>
+          {loading ? 'Importiere...' : 'Import starten'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function KoelnImportForm({ onImported }: { onImported: () => void }) {
+  const [listUrl, setListUrl] = useState("")
+  const [limit, setLimit] = useState<string>("")
+  const [loading, setLoading] = useState(false)
+
+  const handleImport = async () => {
+    try {
+      setLoading(true)
+      const payload: any = { listUrl: listUrl.trim() }
+      const n = parseInt(limit)
+      if (!isNaN(n) && n > 0) payload.limit = n
+
+      const res = await fetchWithCsrf('/api/leads/scrapers/koeln', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || 'Import failed')
+      }
+      const data = await res.json()
+      toast.success(`Importiert: ${data.imported || 0} Leads`)
+      onImported()
+    } catch (error: any) {
+      toast.error(error?.message || 'Import fehlgeschlagen')
+      console.error('Koeln import error:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label>Ausstellerlisten-URL *</Label>
+        <Input
+          placeholder="https://www.koelnmesse.de/.../exhibitor-search.html"
+          value={listUrl}
+          onChange={(e) => setListUrl(e.target.value)}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label>Limit (optional, nur zum Testen)</Label>
+        <Input
+          placeholder="z. B. 20"
+          value={limit}
+          onChange={(e) => setLimit(e.target.value)}
+        />
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => { setListUrl(''); setLimit('') }} disabled={loading}>Zurücksetzen</Button>
+        <Button onClick={handleImport} disabled={loading || !listUrl.trim()}>
+          {loading ? 'Importiere...' : 'Import starten'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function MuenchenImportForm({ onImported }: { onImported: () => void }) {
+  const [listUrl, setListUrl] = useState("")
+  const [limit, setLimit] = useState<string>("")
+  const [loading, setLoading] = useState(false)
+
+  const handleImport = async () => {
+    try {
+      setLoading(true)
+      const payload: any = { listUrl: listUrl.trim() }
+      const n = parseInt(limit)
+      if (!isNaN(n) && n > 0) payload.limit = n
+
+      const res = await fetchWithCsrf('/api/leads/scrapers/messe-muenchen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || 'Import failed')
+      }
+      const data = await res.json()
+      toast.success(`Importiert: ${data.imported || 0} Leads`)
+      onImported()
+    } catch (error: any) {
+      toast.error(error?.message || 'Import fehlgeschlagen')
+      console.error('Muenchen import error:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label>Ausstellerlisten-URL *</Label>
+        <Input
+          placeholder="https://www.messe-muenchen.de/.../exhibitordetails/"
+          value={listUrl}
+          onChange={(e) => setListUrl(e.target.value)}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label>Limit (optional, nur zum Testen)</Label>
+        <Input
+          placeholder="z. B. 20"
+          value={limit}
+          onChange={(e) => setLimit(e.target.value)}
+        />
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => { setListUrl(''); setLimit('') }} disabled={loading}>Zurücksetzen</Button>
+        <Button onClick={handleImport} disabled={loading || !listUrl.trim()}>
+          {loading ? 'Importiere...' : 'Import starten'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function BerlinImportForm({ onImported }: { onImported: () => void }) {
+  const [listUrl, setListUrl] = useState("")
+  const [limit, setLimit] = useState<string>("")
+  const [loading, setLoading] = useState(false)
+
+  const handleImport = async () => {
+    try {
+      setLoading(true)
+      const payload: any = { listUrl: listUrl.trim() }
+      const n = parseInt(limit)
+      if (!isNaN(n) && n > 0) payload.limit = n
+
+      const res = await fetchWithCsrf('/api/leads/scrapers/messe-berlin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || 'Import failed')
+      }
+      const data = await res.json()
+      toast.success(`Importiert: ${data.imported || 0} Leads`)
+      onImported()
+    } catch (error: any) {
+      toast.error(error?.message || 'Import fehlgeschlagen')
+      console.error('Berlin import error:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label>Ausstellerlisten-URL *</Label>
+        <Input
+          placeholder="https://.../showfloor/organizations"
+          value={listUrl}
+          onChange={(e) => setListUrl(e.target.value)}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label>Limit (optional, nur zum Testen)</Label>
+        <Input
+          placeholder="z. B. 20"
+          value={limit}
+          onChange={(e) => setLimit(e.target.value)}
+        />
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => { setListUrl(''); setLimit('') }} disabled={loading}>Zurücksetzen</Button>
+        <Button onClick={handleImport} disabled={loading || !listUrl.trim()}>
+          {loading ? 'Importiere...' : 'Import starten'}
+        </Button>
+      </div>
     </div>
   )
 }

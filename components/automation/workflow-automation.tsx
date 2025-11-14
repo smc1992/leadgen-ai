@@ -39,6 +39,7 @@ interface Workflow {
   trigger_type: string
   trigger_config: any
   is_active: boolean
+  is_template?: boolean
   category: string
   execution_count: number
   success_rate: number

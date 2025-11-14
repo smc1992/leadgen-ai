@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
+import { config } from '@/lib/config'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+const supabaseUrl = config.supabaseUrl
+const supabaseAnonKey = config.supabaseAnonKey
+const serviceRoleKey = config.supabaseServiceRoleKey
 
 // Treat obvious placeholders or malformed keys as "not configured"
 const looksLikeJwt = (v: string) => v.includes('.') && v.length > 20

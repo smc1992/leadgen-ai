@@ -154,7 +154,7 @@ export function ScrapeGoogleMapsDialog({ onImported }: Props) {
     }
     try {
       setStatus('running')
-      const res = await fetch('/api/scrape', {
+      const res = await fetchWithCsrf('/api/scrape', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -224,7 +224,7 @@ export function ScrapeGoogleMapsDialog({ onImported }: Props) {
         rating_count: typeof r.ratingCount === 'number' ? r.ratingCount : undefined,
         categories: Array.isArray(r.categories) ? r.categories : undefined,
       }))
-      const res = await fetch('/api/leads', {
+      const res = await fetchWithCsrf('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ leads: leadsPayload, listName: listName || undefined })
@@ -443,3 +443,4 @@ export function ScrapeGoogleMapsDialog({ onImported }: Props) {
     </Dialog>
   )
 }
+import { fetchWithCsrf } from '@/lib/client-fetch'

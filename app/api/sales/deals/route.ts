@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { supabaseAdmin } from '@/lib/supabase'
+import { executeWorkflowSteps } from '@/lib/workflows'
 // Normalize various date string formats to YYYY-MM-DD for Postgres DATE
 function normalizeDate(input: any): string | null {
   if (!input) return null
@@ -295,6 +296,17 @@ export async function PUT(request: NextRequest) {
           new_stage_id: stage_id
         }
       })
+      try {
+        const { data: workflows } = await supabaseAdmin
+          .from('workflows')
+          .select('*')
+          .eq('is_active', true)
+          .eq('trigger_type', 'deal_stage_changed')
+          .eq('user_id', session.user.id)
+        for (const wf of workflows || []) {
+          await executeWorkflowSteps(wf, { deal_id: id })
+        }
+      } catch {}
     }
 
     // Log status change
@@ -309,6 +321,17 @@ export async function PUT(request: NextRequest) {
           new_status: status
         }
       })
+      try {
+        const { data: workflows } = await supabaseAdmin
+          .from('workflows')
+          .select('*')
+          .eq('is_active', true)
+          .eq('trigger_type', 'deal_status_changed')
+          .eq('user_id', session.user.id)
+        for (const wf of workflows || []) {
+          await executeWorkflowSteps(wf, { deal_id: id })
+        }
+      } catch {}
     }
 
     return NextResponse.json({ deal: data })

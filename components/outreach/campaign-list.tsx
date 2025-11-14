@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Send, Clock, CheckCircle, AlertTriangle, MoreVertical, Play, Pause, Trash2, TrendingUp, Users, Mail, MousePointerClick } from "lucide-react"
+import { Send, Clock, CheckCircle, AlertTriangle, MoreVertical, Play, Pause, Trash2, TrendingUp, Users, Mail, MousePointerClick, FlaskConical, Target } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,6 +13,11 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/components/ui/use-toast"
 import { Progress } from "@/components/ui/progress"
+import { fetchWithCsrf } from '@/lib/client-fetch'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface Campaign {
   id: string
@@ -33,6 +38,14 @@ export function CampaignList() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
+  const [abDialogOpen, setAbDialogOpen] = useState<{open: boolean, campaign?: Campaign}>({ open: false })
+  const [abName, setAbName] = useState("")
+  const [abDescription, setAbDescription] = useState("")
+  const [variantA, setVariantA] = useState("")
+  const [variantB, setVariantB] = useState("")
+  const [sampleSize, setSampleSize] = useState("1000")
+  const [confidence, setConfidence] = useState("0.95")
+  const [metric, setMetric] = useState("open_rate")
 
   useEffect(() => {
     fetchCampaigns()
@@ -80,7 +93,7 @@ export function CampaignList() {
   const handleStatusChange = async (campaign: Campaign, newStatus: string) => {
     try {
       const instantlyId = campaign.instantly_id || campaign.instantlyData?.id || campaign.id
-      const response = await fetch('/api/email', {
+      const response = await fetchWithCsrf('/api/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
@@ -110,7 +123,7 @@ export function CampaignList() {
     if (!confirm('Are you sure you want to delete this campaign?')) return
 
     try {
-      const response = await fetch(`/api/outreach/campaigns?id=${campaignId}`, {
+      const response = await fetchWithCsrf(`/api/outreach/campaigns?id=${campaignId}`, {
         method: 'DELETE'
       })
 
@@ -127,6 +140,43 @@ export function CampaignList() {
         description: "Failed to delete campaign",
         variant: "destructive"
       })
+    }
+  }
+
+  const handleCreateAbTest = async () => {
+    try {
+      if (!abDialogOpen.campaign) return
+      if (!abName || !variantA || !variantB) {
+        toast({ title: 'Fehler', description: 'Name und beide Varianten erforderlich', variant: 'destructive' })
+        return
+      }
+      const body = {
+        name: abName,
+        description: abDescription,
+        campaign_type: 'email',
+        original_template_id: abDialogOpen.campaign.template_id,
+        test_variants: [
+          { id: 'A', name: variantA },
+          { id: 'B', name: variantB }
+        ],
+        sample_size: parseInt(sampleSize) || 1000,
+        confidence_level: parseFloat(confidence) || 0.95,
+        test_metric: metric
+      }
+      const res = await fetchWithCsrf('/api/intelligence/ab-testing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || 'A/B-Test konnte nicht erstellt werden')
+      }
+      toast({ title: 'A/B-Test erstellt', description: 'Test wurde angelegt und initialisiert' })
+      setAbDialogOpen({ open: false })
+      setAbName(''); setAbDescription(''); setVariantA(''); setVariantB('')
+    } catch (e: any) {
+      toast({ title: 'Fehler', description: e?.message || 'Unbekannter Fehler', variant: 'destructive' })
     }
   }
 
@@ -186,7 +236,7 @@ export function CampaignList() {
                       <MoreVertical className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end">
                     {campaign.status === 'draft' && (
                       <DropdownMenuItem onClick={() => handleStatusChange(campaign, 'active')}>
                         <Play className="h-4 w-4 mr-2" />
@@ -211,6 +261,10 @@ export function CampaignList() {
                     >
                       <Trash2 className="h-4 w-4 mr-2" />
                       Delete
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setAbDialogOpen({ open: true, campaign })}>
+                      <FlaskConical className="h-4 w-4 mr-2" />
+                      Start A/B Test
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -282,6 +336,75 @@ export function CampaignList() {
           </Card>
         )
       })}
+      <Dialog open={abDialogOpen.open} onOpenChange={(o) => setAbDialogOpen({ open: o, campaign: abDialogOpen.campaign })}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Neuen A/B-Test erstellen</DialogTitle>
+            <DialogDescription>
+              Teste Varianten für {abDialogOpen.campaign?.name || 'Kampagne'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Name *</Label>
+              <Input value={abName} onChange={(e) => setAbName(e.target.value)} placeholder="Betreff-Test Q4" />
+            </div>
+            <div className="space-y-2">
+              <Label>Beschreibung</Label>
+              <Input value={abDescription} onChange={(e) => setAbDescription(e.target.value)} placeholder="Vergleich zweier Betreffzeilen" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Variante A *</Label>
+                <Input value={variantA} onChange={(e) => setVariantA(e.target.value)} placeholder="z. B. Betreff A" />
+              </div>
+              <div className="space-y-2">
+                <Label>Variante B *</Label>
+                <Input value={variantB} onChange={(e) => setVariantB(e.target.value)} placeholder="z. B. Betreff B" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Sample Size</Label>
+                <Input value={sampleSize} onChange={(e) => setSampleSize(e.target.value)} placeholder="1000" />
+              </div>
+              <div className="space-y-2">
+                <Label>Confidence</Label>
+                <Select value={confidence} onValueChange={setConfidence}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0.90">90%</SelectItem>
+                    <SelectItem value="0.95">95%</SelectItem>
+                    <SelectItem value="0.99">99%</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Metric</Label>
+                <Select value={metric} onValueChange={setMetric}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open_rate">Open Rate</SelectItem>
+                    <SelectItem value="click_rate">Click Rate</SelectItem>
+                    <SelectItem value="reply_rate">Reply Rate</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setAbDialogOpen({ open: false })}>Abbrechen</Button>
+              <Button onClick={handleCreateAbTest}>
+                <FlaskConical className="h-4 w-4 mr-2" />
+                Test starten
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

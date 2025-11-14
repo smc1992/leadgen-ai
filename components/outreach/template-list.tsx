@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { MoreVertical } from "lucide-react"
+import { fetchWithCsrf } from '@/lib/client-fetch'
 
 interface Template {
   id: string
@@ -72,7 +73,7 @@ export function TemplateList({ onEdit, onSelect }: TemplateListProps) {
     if (!confirm('Delete this template?')) return
 
     try {
-      const response = await fetch(`/api/outreach/templates?id=${id}`, {
+      const response = await fetchWithCsrf(`/api/outreach/templates?id=${id}`, {
         method: 'DELETE'
       })
 
@@ -95,7 +96,7 @@ export function TemplateList({ onEdit, onSelect }: TemplateListProps) {
 
   const handleDuplicate = async (template: Template) => {
     try {
-      const response = await fetch('/api/outreach/templates', {
+      const response = await fetchWithCsrf('/api/outreach/templates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
